@@ -8,7 +8,8 @@ custom physics.
 
 For a precise breakdown of what works vs. what is stubbed, see
 [CURRENT_STATUS.md](CURRENT_STATUS.md). For the developer-facing system map,
-see [ARCHITECTURE.md](ARCHITECTURE.md).
+see [ARCHITECTURE.md](ARCHITECTURE.md). The latest continuation notes live in
+[HANDOFF.md](HANDOFF.md).
 
 ## Requirements
 
@@ -30,6 +31,8 @@ Other scripts:
 npm run build    # type-check (tsc --noEmit) + production build to dist/
 npm run preview  # serve the production build locally
 npm run sim      # headless deterministic regression suite (no browser)
+npm run test:graph    # attachment graph / tree regression suite
+npm run test:builder  # Phase 12 selection, group-op, and warning checks
 ```
 
 `npm run sim` is the fastest way to confirm the physics/systems layer is
@@ -44,6 +47,9 @@ rails warp, and landing-strut touchdown (deploy/stow/break gates).
 | Drag from palette / placed part | Place / move (exact node snapping) |
 | Drag empty space · wheel / pinch | Pan / zoom the editor camera |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| Select tool or `Shift`+drag | Box-select parts (`Shift`+click toggles) |
+| Move tool + drag selected part | Move selected subtrees as one rigid group |
+| `Ctrl+D` / `Delete` | Duplicate / delete the selected subtrees |
 | SYM button | Mirror placement across the center column (use for landing-strut pairs) |
 | Right-click a placed part | Context menu: thrust limiter, ignition stage, tank size, nose/chute config |
 | STAGING panel (hover/tap a stage) | Highlights that stage's parts |
@@ -53,7 +59,7 @@ rails warp, and landing-strut touchdown (deploy/stow/break gates).
 | `Space` / STAGE | Fire next stage (spent stage becomes a persistent vessel) |
 | 🪂 / LEGS / `L` | Arm parachutes / deploy or stow all landing struts (`L` in flight only) |
 | `M` / MAP | Map view (pan by dragging, pinch/wheel zoom, FOLLOW/CENTER, Ap/Pe markers) |
-| `,` / `.` or ◄◄ ►► | Time warp: 1–4x physics, 10–1000x rails (stable orbit only, Earth or Moon) |
+| `,` / `.` or ◄◄ ►► | Time warp: 1–4x physics, 10–1000x rails (bound vacuum arcs, Earth or Moon) |
 | `Esc` / ⏸ | Pause menu (resume, reverts, scene exits, quicksave/-load) |
 | `F5` / `F9` · `F3` | Quicksave / Quickload · debug overlay |
 | `L` / LOG · `R` / reset | Debug log · revert to launch |
@@ -101,6 +107,9 @@ Ground rules baked into the code (do not violate when continuing):
   staging panel.
 - **All editor mutations funnel through `BuilderScene.designChanged()`** so
   undo/redo, analysis, and the CoM marker never go stale.
+- **Phase 12 builder checks are advisory**: live warnings flag missing control,
+  crew-capable recovery without a retained chute, and incorrectly mounted
+  landing struts. Launch-blocking structure rules remain in `validateDesign()`.
 
 ## Landing struts (VAB + flight)
 
@@ -135,6 +144,6 @@ and physics in `src/vehicle/LandingLegs.ts`.
 
 The launch → orbit → Moon → reenter → land loop works, including procedural
 parachutes, LT-2-style landing struts with foot contact, launch clamps,
-electricity, and Moon-relative rails warp. See [CURRENT_STATUS.md](CURRENT_STATUS.md)
-for the full done/partial/stubbed breakdown and the recommended next development
-phase.
+electricity, Moon-relative rails warp, and graph-safe VAB multi-selection. See
+[CURRENT_STATUS.md](CURRENT_STATUS.md) for the full done/partial/stubbed
+breakdown and the recommended next development phase.

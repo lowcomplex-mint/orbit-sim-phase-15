@@ -222,6 +222,34 @@ input.throttle {
   text-align: center;
 }
 
+.sel-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(10, 15, 30, 0.94);
+  border: 1px solid rgba(99, 212, 255, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  z-index: 25;
+}
+
+.sel-toolbar[hidden] {
+  display: none;
+}
+
+.sel-count {
+  color: #63d4ff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .palette {
   position: absolute;
   top: 70px;
@@ -275,6 +303,28 @@ input.throttle {
 }
 
 @media (max-width: 720px) {
+  .toolbar-top {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    touch-action: pan-x;
+  }
+
+  .toolbar-top::-webkit-scrollbar {
+    display: none;
+  }
+
+  .toolbar-top > * {
+    flex: 0 0 auto;
+  }
+
+  .toolbar-tools {
+    flex-wrap: nowrap;
+  }
+
   .hint {
     display: none; /* too crowded next to the bottom palette on phones */
   }
@@ -295,6 +345,11 @@ input.throttle {
 
   .part-card {
     min-width: 132px;
+  }
+
+  .sel-toolbar {
+    bottom: 170px;
+    max-width: calc(100vw - 20px);
   }
 }
 
@@ -339,6 +394,10 @@ input.throttle {
   gap: 8px;
 }
 
+.eng-body[hidden] {
+  display: none;
+}
+
 .eng-block {
   display: flex;
   flex-direction: column;
@@ -380,6 +439,15 @@ input.throttle {
 
 .eng-note.warn-text {
   color: #ffd166;
+}
+
+.eng-note.pass-text {
+  color: #79dda0;
+}
+
+.build-checks {
+  border-left: 2px solid rgba(99, 212, 255, 0.55);
+  padding-left: 6px;
 }
 
 @media (max-width: 720px) {

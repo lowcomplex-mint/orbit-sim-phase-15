@@ -1,6 +1,7 @@
 import { formatMass } from '../math/Units';
 import type { StageAnalysis, VehicleAnalysisResult } from '../systems/VehicleAnalysis';
 import type { HabitationSummary } from '../future/HabitationSystem';
+import type { DesignWarning } from './DesignWarnings';
 
 /**
  * KER-style collapsible engineering readout for the builder. Pure DOM and
@@ -41,7 +42,11 @@ export class EditorEngineeringPanel {
     this.applyCollapsed();
   }
 
-  update(analysis: VehicleAnalysisResult | null, habitation: HabitationSummary | null): void {
+  update(
+    analysis: VehicleAnalysisResult | null,
+    habitation: HabitationSummary | null,
+    designWarnings: readonly DesignWarning[] = [],
+  ): void {
     this.body.replaceChildren();
     if (!analysis || analysis.stages.length === 0) {
       this.body.appendChild(this.note('No parts.'));
@@ -70,6 +75,26 @@ export class EditorEngineeringPanel {
     this.row(totals, 'Cost', `${Math.round(analysis.totalCostFunds)} funds`);
     this.row(totals, 'Parts', String(analysis.partCount));
     this.body.appendChild(totals);
+
+    const checks = document.createElement('div');
+    checks.className = 'eng-block build-checks';
+    const checksHeading = document.createElement('div');
+    checksHeading.className = 'eng-stage-title';
+    checksHeading.textContent = 'BUILD CHECKS';
+    checks.appendChild(checksHeading);
+    if (designWarnings.length === 0) {
+      const passed = this.note('✓ No gameplay warnings.');
+      passed.classList.add('pass-text');
+      checks.appendChild(passed);
+    } else {
+      for (const warning of designWarnings) {
+        const el = this.note(`⚠ ${warning.message}`);
+        el.classList.add('warn-text');
+        el.dataset.warningCode = warning.code;
+        checks.appendChild(el);
+      }
+    }
+    this.body.appendChild(checks);
 
     // Per-stage blocks, in firing order.
     for (const stage of analysis.stages) {

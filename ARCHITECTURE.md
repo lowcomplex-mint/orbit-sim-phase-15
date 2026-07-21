@@ -43,14 +43,18 @@ drives a full FlightSession headless and is the regression suite.
   Writes go to a `:pending` key, are verified, then swapped — a mid-write
   crash cannot corrupt the previous save. Version field checked on load.
 - Restores are bit-identical under further integration (sim-verified).
-- IDs: vessels have persistent numeric ids (`VesselManager.nextId` is
-  saved). Parts are identified positionally within a vessel; TODO: persistent
-  part ids once docking/merging needs cross-save part identity.
+- IDs: vessels have persistent numeric ids (`VesselManager.nextId` is saved).
+  VAB placements have stable design-local ids plus explicit attachment edges;
+  runtime part state is still serialized positionally within a vessel. Docking
+  will need runtime/cross-vessel part identity.
 
 ## Vessel / staging model
 
-- A craft is a set of parts on an integer grid, connected ONLY by exact
-  attachment-node coincidence (top/bottom stack nodes, left/right flanks).
+- A craft is a set of parts on the fractional builder grid. Explicit
+  `AttachmentEdge` records are rebuilt from exact attachment-node coincidence
+  (top/bottom stack nodes, left/right flanks), then `parentId` is derived from
+  those edges plus `rootPartId`. Detached components retain an internal tree
+  for editing but fail structural validation until joined to the root craft.
 - `vehicle/StageSystem.ts` derives everything from the attachment graph:
   activation stages (radial decouplers default stage 1; stack decouplers
   bottom-up; engines ignite after the last stack decoupler below them),
@@ -61,14 +65,14 @@ drives a full FlightSession headless and is the regression suite.
 - Splitting is therefore implemented; MERGING (docking) is the planned
   inverse: union two part sets, re-run `computeStagePlan`. Docking-port
   parts + approach/targeting UI are TODO.
-- The "root" is the command pod (fallback: largest fragment). An explicit
-  re-root tool is TODO — the graph model already supports any root choice.
+- The default root is the command pod (fallback: first part). The VAB Root tool
+  can select any part and re-derive parent links without changing staging.
 
 ## Physics
 
 - Semi-implicit Euler at a fixed 1/60 s; physics warp = more substeps
-  (max 4x); rails warp = analytic conic (space/KeplerOrbit), gated to
-  unpowered stable orbits around Earth.
+  (max 4x); rails warp = analytic conic (`space/KeplerOrbit`), gated to
+  unpowered bound elliptic arcs outside the dominant body's atmosphere.
 - Attitude: A/D is a rate command. An SAS controller (modes: off /
   stability / prograde / retrograde) requests torque clamped to real
   authority — reaction wheels + engine gimbal x lever arm from the live
@@ -112,12 +116,20 @@ drives a full FlightSession headless and is the regression suite.
   symmetry) with twin ghosts; right-click context menus (thrust limiter,
   ignition stage, procedural dims — editor-only by construction, nose
   shapes); procedural parts resolve through `vehicle/ProceduralPart.ts`.
-- TODO: box selection + group operations, re-root tool, part search/
-  category tabs, launch clamps + pad-clearance warnings, subassemblies.
+- Phase 12 multi-selection is scene-local stable ids: the Select tool (or
+  Shift) builds an AABB marquee, then Move/DUP/DEL operate on the deduplicated
+  union of selected subtrees. Pure `builder/GroupOps.ts` performs atomic
+  collision/bounds checks and re-syncs the graph after a commit; previews do
+  not mutate design/history. `scripts/testBuilder.ts` covers this headlessly.
+- `builder/DesignWarnings.ts` supplies typed, advisory gameplay checks to the
+  Engineer panel. Structural/minimum-part launch blockers remain in
+  `RocketAssembler.validateDesign()`.
+- TODO: part search/category tabs, pad-clearance warnings, Rotate v2, and
+  reusable subassemblies.
 
 ## Recovery loop (parachutes / legs / clamps / electricity)
 
-Implemented and boot-verified, but not yet in the `npm run sim` suite — see
+Implemented and covered by the `npm run sim` recovery blocks — see
 CURRENT_STATUS.md.
 
 - **Parachutes** are procedural (`ProceduralPart.resolveChute`): per-instance

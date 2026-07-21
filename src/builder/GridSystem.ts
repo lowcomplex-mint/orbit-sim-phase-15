@@ -58,7 +58,7 @@ export function inBounds(
   );
 }
 
-function rectsOverlap(
+export function rectsOverlap(
   ax: number, ay: number, aw: number, ah: number,
   bx: number, by: number, bw: number, bh: number,
 ): boolean {

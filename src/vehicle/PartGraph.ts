@@ -132,7 +132,7 @@ export function buildEdgesFromGeometry(
 /** BFS from root: first visit sets parent. */
 export function deriveTreeFromEdges(design: RocketDesign, edges: AttachmentEdge[]): void {
   ensurePartIds(design);
-  if (!design.rootPartId) {
+  if (!design.rootPartId || !design.parts.some((part) => part.id === design.rootPartId)) {
     design.rootPartId = design.parts[0]?.id ?? null;
   }
   const rootId = design.rootPartId;
@@ -152,26 +152,32 @@ export function deriveTreeFromEdges(design: RocketDesign, edges: AttachmentEdge[
     p.parentId = p.id === rootId ? null : null;
   }
 
-  const visited = new Set<string>([rootId]);
-  const queue = [rootId];
-  while (queue.length > 0) {
-    const currentId = queue.shift()!;
-    for (const { neighborId } of adjacency.get(currentId) ?? []) {
-      if (visited.has(neighborId)) continue;
-      visited.add(neighborId);
-      const child = design.parts.find((p) => p.id === neighborId);
-      if (child) child.parentId = currentId;
-      queue.push(neighborId);
+  const visited = new Set<string>();
+  const orientComponent = (componentRootId: string): void => {
+    const componentRoot = design.parts.find((part) => part.id === componentRootId);
+    if (!componentRoot) return;
+    componentRoot.parentId = null;
+    visited.add(componentRootId);
+    const queue = [componentRootId];
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      for (const { neighborId } of adjacency.get(currentId) ?? []) {
+        if (visited.has(neighborId)) continue;
+        visited.add(neighborId);
+        const child = design.parts.find((part) => part.id === neighborId);
+        if (child) child.parentId = currentId;
+        queue.push(neighborId);
+      }
     }
-  }
+  };
 
-  for (const p of design.parts) {
-    if (p.id !== rootId && p.parentId === null && visited.has(p.id!)) {
-      // reachable but not assigned — should not happen; leave null
-    }
-    if (p.id !== rootId && !visited.has(p.id!)) {
-      p.parentId = null;
-    }
+  // Orient the launchable component from the designated root, then retain a
+  // deterministic tree inside every detached component. Structural validation
+  // still reports those components as disconnected from the real root, but a
+  // freshly duplicated subassembly remains movable as a subtree.
+  orientComponent(rootId);
+  for (const part of design.parts) {
+    if (part.id && !visited.has(part.id)) orientComponent(part.id);
   }
 }
 
@@ -227,11 +233,21 @@ export function syncDesignGraph(
   catalog: Map<string, PartDefinition>,
   instances?: PartInstance[],
 ): void {
+  if (design.isEmpty) {
+    design.rootPartId = null;
+    design.edges = [];
+    return;
+  }
   ensurePartIds(design);
   migrateRotationSemantics(design);
 
-  if (!design.rootPartId) {
-    design.rootPartId = pickRootHeuristic(design, catalog);
+  if (!design.rootPartId || !design.parts.some((part) => part.id === design.rootPartId)) {
+    // Preserve an explicitly oriented surviving component when the previous
+    // designated root was deleted. Fall back to the pod heuristic only for
+    // legacy/unoriented data that has no parentless component root.
+    design.rootPartId =
+      design.parts.find((part) => part.id && part.parentId === null)?.id ??
+      pickRootHeuristic(design, catalog);
   }
 
   // Geometry + node coincidence is authoritative; edges are rebuilt each sync.

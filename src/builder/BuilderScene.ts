@@ -27,10 +27,19 @@ import { RocketDesign, type PlacedPartData } from '../vehicle/RocketDesign';
 import { RocketRuntime } from '../vehicle/RocketRuntime';
 import { previewStages, type StagePreview } from '../vehicle/StageSystem';
 import { EditorEngineeringPanel } from './EditorEngineeringPanel';
+import { analyzeDesignWarnings } from './DesignWarnings';
+import {
+  canMoveGroup,
+  deleteGroup,
+  duplicateGroup,
+  expandGroupIds,
+  moveGroup,
+} from './GroupOps';
 import { inBounds, overlapsAnyPart, worldToGrid } from './GridSystem';
 import { formatSnapStep, snapValue } from './PlacementGrid';
 import { PartContextMenu } from './PartContextMenu';
 import { PartPalette } from './PartPalette';
+import { partsInSelectionBox } from './SelectionBox';
 import { RotateControls } from './RotateControls';
 import { instantiateParts, validateDesign } from './RocketAssembler';
 import { SnapControls } from './SnapControls';
@@ -45,13 +54,30 @@ interface DragState extends DraggedPart {
   snap: SnapResult | null;
 }
 
-type BuilderTool = 'place' | 'transform' | 'rotate' | 'reroot';
+type BuilderTool = 'place' | 'select' | 'transform' | 'rotate' | 'reroot';
 
 interface TransformDrag {
   rootId: string;
   snapshots: { xCells: number; yCells: number }[];
   startGridX: number;
   startGridY: number;
+}
+
+interface BoxSelectionDrag {
+  pointerId: number;
+  start: Vec2;
+  end: Vec2;
+  additive: boolean;
+  selectionBefore: Set<string>;
+}
+
+interface GroupDrag {
+  pointerId: number;
+  partIds: string[];
+  startGridX: number;
+  startGridY: number;
+  dxCells: number;
+  dyCells: number;
 }
 
 /** Undo/redo depth. Snapshots are tiny (design JSON), so keep plenty. */
@@ -73,6 +99,7 @@ export class BuilderScene implements Scene {
   private partsLayer = new Container();
   private ghostG = new Graphics();
   private comMarkerG = new Graphics();
+  private selectionG = new Graphics();
   private highlightG = new Graphics();
   private camera = new CameraController(56, BUILDER.minPxPerMeter, BUILDER.maxPxPerMeter);
 
@@ -87,6 +114,11 @@ export class BuilderScene implements Scene {
   private toolMode: BuilderTool = 'place';
   private selectedPartId: string | null = null;
   private transformDrag: TransformDrag | null = null;
+  private selectedPartIds = new Set<string>();
+  private boxSelection: BoxSelectionDrag | null = null;
+  private groupDrag: GroupDrag | null = null;
+  private selectionToolbar!: HTMLDivElement;
+  private selectionCountEl!: HTMLSpanElement;
   private toolBtns: Record<BuilderTool, HTMLButtonElement> | null = null;
   private hintEl!: HTMLDivElement;
   private lastWarnings = '';
@@ -111,7 +143,8 @@ export class BuilderScene implements Scene {
   private readonly pointerUpHandler = (e: PointerEvent) => this.onPointerUp(e);
   private readonly canvasDownHandler = (e: PointerEvent) => this.onCanvasDown(e);
   private readonly canvasMoveHandler = (e: PointerEvent) => this.onCanvasPanMove(e);
-  private readonly canvasUpHandler = (e: PointerEvent) => this.panPointers.delete(e.pointerId);
+  private readonly canvasUpHandler = (e: PointerEvent) => this.onCanvasUp(e);
+  private readonly canvasCancelHandler = (e: PointerEvent) => this.onCanvasCancel(e);
   private readonly contextMenuHandler = (e: MouseEvent) => this.onContextMenu(e);
 
   constructor(
@@ -126,11 +159,13 @@ export class BuilderScene implements Scene {
     this.partsLayer = new Container();
     this.ghostG = new Graphics();
     this.comMarkerG = new Graphics();
+    this.selectionG = new Graphics();
     this.highlightG = new Graphics();
     this.gridG = buildGridGraphic();
     this.root.addChild(
       this.gridG,
       this.partsLayer,
+      this.selectionG,
       this.highlightG,
       this.comMarkerG,
       this.ghostG,
@@ -141,7 +176,7 @@ export class BuilderScene implements Scene {
     this.renderer.canvas.addEventListener('pointerdown', this.canvasDownHandler);
     this.renderer.canvas.addEventListener('pointermove', this.canvasMoveHandler);
     this.renderer.canvas.addEventListener('pointerup', this.canvasUpHandler);
-    this.renderer.canvas.addEventListener('pointercancel', this.canvasUpHandler);
+    this.renderer.canvas.addEventListener('pointercancel', this.canvasCancelHandler);
     this.renderer.canvas.addEventListener('contextmenu', this.contextMenuHandler);
     this.renderer.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
     window.addEventListener('keydown', this.keyHandler);
@@ -149,6 +184,9 @@ export class BuilderScene implements Scene {
     this.history = [];
     this.historyIndex = -1;
     this.panPointers.clear();
+    this.selectedPartIds.clear();
+    this.boxSelection = null;
+    this.groupDrag = null;
     this.fitView();
     this.designChanged();
     this.ctx.log('info', `Builder opened (${this.ctx.design.parts.length} parts).`);
@@ -163,7 +201,7 @@ export class BuilderScene implements Scene {
     this.renderer.canvas.removeEventListener('pointerdown', this.canvasDownHandler);
     this.renderer.canvas.removeEventListener('pointermove', this.canvasMoveHandler);
     this.renderer.canvas.removeEventListener('pointerup', this.canvasUpHandler);
-    this.renderer.canvas.removeEventListener('pointercancel', this.canvasUpHandler);
+    this.renderer.canvas.removeEventListener('pointercancel', this.canvasCancelHandler);
     this.renderer.canvas.removeEventListener('contextmenu', this.contextMenuHandler);
     this.renderer.canvas.removeEventListener('wheel', this.wheelHandler);
     window.removeEventListener('keydown', this.keyHandler);
@@ -230,9 +268,12 @@ export class BuilderScene implements Scene {
     const toolRow = createRow('toolbar-tools');
     this.toolBtns = {
       place: createButton('Place', () => this.setTool('place'), { title: 'Place parts (default)' }),
+      select: createButton('Select', () => this.setTool('select'), {
+        title: 'Box-select parts (hold Shift from any tool)',
+      }),
       transform: createButton('Move', () => this.setTool('transform'), { title: 'Move part + subtree' }),
       rotate: createButton('Rotate', () => this.setTool('rotate'), {
-        title: 'Disabled until Phase 13 (node overhaul)',
+        title: 'Rotate v2 is deferred to Phase 13; see the pivot-rules plan',
       }),
       reroot: createButton('Root', () => this.setTool('reroot'), { title: 'Set tree root part' }),
     };
@@ -240,6 +281,7 @@ export class BuilderScene implements Scene {
     this.toolBtns.rotate.classList.add('disabled');
     toolRow.append(
       this.toolBtns.place,
+      this.toolBtns.select,
       this.toolBtns.transform,
       this.toolBtns.rotate,
       this.toolBtns.reroot,
@@ -255,7 +297,32 @@ export class BuilderScene implements Scene {
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'hint';
 
-    this.uiRoot.append(toolbar, toolRow, this.hintEl);
+    this.selectionToolbar = document.createElement('div');
+    this.selectionToolbar.className = 'sel-toolbar';
+    this.selectionToolbar.hidden = true;
+    this.selectionCountEl = document.createElement('span');
+    this.selectionCountEl.className = 'sel-count';
+    this.selectionToolbar.append(
+      this.selectionCountEl,
+      createButton('DUP', () => this.duplicateSelection(), {
+        className: 'small',
+        title: 'Duplicate selection (Ctrl+D)',
+      }),
+      createButton('DEL', () => this.deleteSelection(), {
+        className: 'small danger',
+        title: 'Delete selection (Delete)',
+      }),
+      createButton(
+        '✕',
+        () => {
+          this.selectedPartIds.clear();
+          this.drawSelection();
+        },
+        { className: 'small', title: 'Clear selection' },
+      ),
+    );
+
+    this.uiRoot.append(toolbar, toolRow, this.hintEl, this.selectionToolbar);
     this.setTool('place');
     document.getElementById('ui-root')!.appendChild(this.uiRoot);
 
@@ -301,6 +368,7 @@ export class BuilderScene implements Scene {
     }
     const hints: Record<BuilderTool, string> = {
       place: 'Drag parts to build · right-click configures · Snap for fine placement · pan/zoom empty space.',
+      select: 'Drag a box over parts · click toggles · switch to Move and drag a selected part.',
       transform: 'Click a part and drag to move it with its subtree · respects Snap step.',
       rotate: 'Click a part to select · ↺/↻ or Q/E rotate the subtree · adjust Rot step.',
       reroot: 'Click a part to make it the tree root · staging order is unchanged.',
@@ -323,13 +391,17 @@ export class BuilderScene implements Scene {
   }
 
   private clearDesign(): void {
+    this.cancelSelectionGesture();
     this.ctx.design = new RocketDesign('Untitled Rocket');
+    this.selectedPartIds.clear();
     this.designChanged();
     this.ctx.log('info', 'Design cleared.');
   }
 
   private loadDefault(): void {
+    this.cancelSelectionGesture();
     this.ctx.design = RocketDesign.fromData(DEFAULT_ROCKET_DESIGN);
+    this.selectedPartIds.clear();
     this.designChanged();
     this.ctx.log('info', `Loaded default rocket "${this.ctx.design.name}".`);
   }
@@ -345,7 +417,9 @@ export class BuilderScene implements Scene {
       this.ctx.log('warn', 'No saved design found.');
       return;
     }
+    this.cancelSelectionGesture();
     this.ctx.design = RocketDesign.fromData(data);
+    this.selectedPartIds.clear();
     this.designChanged();
     this.ctx.log('info', `Loaded design "${data.name}".`);
   }
@@ -498,15 +572,73 @@ export class BuilderScene implements Scene {
     window.removeEventListener('pointerup', this.pointerUpHandler);
   }
 
-  /**
-   * Pointer down on the canvas: pick up a part under the cursor, otherwise
-   * start panning the editor camera (two pointers pinch-zoom).
-   */
+  /** Cancel a marquee/group gesture so a later pointer-up cannot commit it. */
+  private cancelSelectionGesture(restoreBoxSelection = true): boolean {
+    const box = this.boxSelection;
+    const group = this.groupDrag;
+    if (!box && !group) return false;
+
+    if (box && restoreBoxSelection) {
+      this.selectedPartIds = new Set(box.selectionBefore);
+    }
+    this.boxSelection = null;
+    this.groupDrag = null;
+    for (const pointerId of [box?.pointerId, group?.pointerId]) {
+      if (pointerId === undefined) continue;
+      try {
+        if (this.renderer.canvas.hasPointerCapture(pointerId)) {
+          this.renderer.canvas.releasePointerCapture(pointerId);
+        }
+      } catch {
+        /* capture may already have been released by the browser */
+      }
+    }
+    this.drawSelection();
+    return true;
+  }
+
+  /** Route selection, graph transforms, normal pickup, and camera gestures. */
   private onCanvasDown(e: PointerEvent): void {
-    if (this.drag || this.transformDrag || e.button !== 0) return;
+    if (
+      this.drag ||
+      this.transformDrag ||
+      this.boxSelection ||
+      this.groupDrag ||
+      e.button !== 0
+    ) {
+      return;
+    }
     const world = this.pointerToWorld(e);
     const grid = worldToGrid(world);
     const placed = this.ctx.design.partAtGrid(grid.xCells, grid.yCells, this.ctx.catalog);
+
+    // Select is an explicit touch-friendly tool; Shift temporarily invokes it
+    // from every other tool without stealing the normal empty-space pan.
+    if (this.toolMode === 'select' || e.shiftKey) {
+      if (placed?.id) {
+        if (this.selectedPartIds.has(placed.id)) this.selectedPartIds.delete(placed.id);
+        else this.selectedPartIds.add(placed.id);
+        this.selectedPartId = null;
+        this.drawSelection();
+        return;
+      }
+      const selectionBefore = new Set(this.selectedPartIds);
+      if (!e.shiftKey) this.selectedPartIds.clear();
+      this.boxSelection = {
+        pointerId: e.pointerId,
+        start: world,
+        end: world,
+        additive: e.shiftKey,
+        selectionBefore,
+      };
+      try {
+        this.renderer.canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* non-fatal */
+      }
+      this.drawSelection();
+      return;
+    }
 
     if (this.toolMode === 'reroot') {
       if (placed?.id && rerootDesign(this.ctx.design, placed.id)) {
@@ -534,6 +666,29 @@ export class BuilderScene implements Scene {
         }
         return;
       }
+
+      if (this.selectedPartIds.has(placed.id) && this.selectedPartIds.size > 0) {
+        const affectedIds = expandGroupIds(this.ctx.design, [...this.selectedPartIds]);
+        this.selectedPartIds = new Set(affectedIds);
+        this.selectedPartId = null;
+        this.groupDrag = {
+          pointerId: e.pointerId,
+          partIds: affectedIds,
+          startGridX: grid.xCells,
+          startGridY: grid.yCells,
+          dxCells: 0,
+          dyCells: 0,
+        };
+        try {
+          this.renderer.canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* non-fatal */
+        }
+        this.drawSelection();
+        return;
+      }
+
+      this.selectedPartIds.clear();
       this.selectedPartId = placed.id;
       const members = subtreeParts(this.ctx.design, placed.id);
       this.transformDrag = {
@@ -550,6 +705,10 @@ export class BuilderScene implements Scene {
 
     // Place tool: pick up part under cursor, otherwise pan.
     if (!placed) {
+      if (this.selectedPartIds.size > 0) {
+        this.selectedPartIds.clear();
+        this.drawSelection();
+      }
       this.panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         this.renderer.canvas.setPointerCapture(e.pointerId);
@@ -560,13 +719,28 @@ export class BuilderScene implements Scene {
     }
     const def = this.ctx.catalog.get(placed.defId);
     if (!def) return;
+    this.selectedPartIds.clear();
     this.ctx.design.removePart(placed);
     this.designChanged();
     this.startDrag(def, placed.custom, e);
   }
 
   private onCanvasPanMove(e: PointerEvent): void {
-    if (this.drag || !this.panPointers.has(e.pointerId)) return;
+    if (this.drag) return;
+    if (this.boxSelection?.pointerId === e.pointerId) {
+      this.boxSelection.end = this.pointerToWorld(e);
+      this.drawSelection();
+      return;
+    }
+    if (this.groupDrag?.pointerId === e.pointerId) {
+      const grid = worldToGrid(this.pointerToWorld(e));
+      const step = this.snapControls.snapStep;
+      this.groupDrag.dxCells = snapValue(grid.xCells - this.groupDrag.startGridX, step);
+      this.groupDrag.dyCells = snapValue(grid.yCells - this.groupDrag.startGridY, step);
+      this.drawSelection();
+      return;
+    }
+    if (!this.panPointers.has(e.pointerId)) return;
     const current = { x: e.clientX, y: e.clientY };
 
     if (this.panPointers.size === 1) {
@@ -594,6 +768,61 @@ export class BuilderScene implements Scene {
     }
   }
 
+  private onCanvasUp(e: PointerEvent): void {
+    this.panPointers.delete(e.pointerId);
+
+    if (this.boxSelection?.pointerId === e.pointerId) {
+      const box = this.boxSelection;
+      this.boxSelection = null;
+      if (!box.additive) this.selectedPartIds.clear();
+      for (const id of partsInSelectionBox(
+        this.ctx.design,
+        this.ctx.catalog,
+        box.start,
+        box.end,
+      )) this.selectedPartIds.add(id);
+      this.drawSelection();
+      this.ctx.log('info', `${this.selectedPartIds.size} part(s) selected.`);
+      return;
+    }
+
+    if (this.groupDrag?.pointerId === e.pointerId) {
+      const drag = this.groupDrag;
+      this.groupDrag = null;
+      if (drag.dxCells !== 0 || drag.dyCells !== 0) {
+        if (
+          moveGroup(
+            this.ctx.design,
+            this.ctx.catalog,
+            drag.partIds,
+            drag.dxCells,
+            drag.dyCells,
+          )
+        ) {
+          this.designChanged();
+          this.ctx.log(
+            'info',
+            `Moved ${drag.partIds.length} part(s) (${drag.dxCells > 0 ? '+' : ''}${drag.dxCells}, ` +
+              `${drag.dyCells > 0 ? '+' : ''}${drag.dyCells}).`,
+          );
+        } else {
+          this.ctx.log('warn', 'Group move rejected: overlap or builder bounds.');
+        }
+      }
+      this.drawSelection();
+    }
+  }
+
+  private onCanvasCancel(e: PointerEvent): void {
+    this.panPointers.delete(e.pointerId);
+    if (this.boxSelection?.pointerId === e.pointerId) {
+      this.selectedPartIds = new Set(this.boxSelection.selectionBefore);
+      this.boxSelection = null;
+    }
+    if (this.groupDrag?.pointerId === e.pointerId) this.groupDrag = null;
+    this.drawSelection();
+  }
+
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
     const rect = this.renderer.canvas.getBoundingClientRect();
@@ -615,6 +844,31 @@ export class BuilderScene implements Scene {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
+    const target = e.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    ) {
+      return;
+    }
+
+    if (e.code === 'Delete' && this.selectedPartIds.size > 0) {
+      e.preventDefault();
+      this.cancelSelectionGesture();
+      this.deleteSelection();
+      return;
+    }
+    if (e.code === 'Escape' && this.cancelSelectionGesture()) {
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'Escape' && this.selectedPartIds.size > 0) {
+      e.preventDefault();
+      this.selectedPartIds.clear();
+      this.drawSelection();
+      return;
+    }
     if (e.ctrlKey || e.metaKey) {
       if (e.code === 'KeyZ' && !e.shiftKey) {
         e.preventDefault();
@@ -622,6 +876,10 @@ export class BuilderScene implements Scene {
       } else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
         e.preventDefault();
         this.redo();
+      } else if (e.code === 'KeyD' && this.selectedPartIds.size > 0) {
+        e.preventDefault();
+        this.cancelSelectionGesture();
+        this.duplicateSelection();
       }
       return;
     }
@@ -767,6 +1025,7 @@ export class BuilderScene implements Scene {
   private designChanged(recordHistory = true): void {
     this.redrawParts();
     this.refreshEngineering();
+    this.drawSelection();
     if (recordHistory) this.pushHistory();
   }
 
@@ -782,6 +1041,7 @@ export class BuilderScene implements Scene {
   }
 
   private undo(): void {
+    this.cancelSelectionGesture();
     if (this.historyIndex <= 0) {
       this.ctx.log('info', 'Nothing to undo.');
       return;
@@ -791,6 +1051,7 @@ export class BuilderScene implements Scene {
   }
 
   private redo(): void {
+    this.cancelSelectionGesture();
     if (this.historyIndex >= this.history.length - 1) {
       this.ctx.log('info', 'Nothing to redo.');
       return;
@@ -800,6 +1061,7 @@ export class BuilderScene implements Scene {
   }
 
   private restoreSnapshot(): void {
+    this.cancelSelectionGesture();
     this.contextMenu.close();
     this.ctx.design = RocketDesign.fromData(JSON.parse(this.history[this.historyIndex]));
     this.designChanged(false);
@@ -879,14 +1141,33 @@ export class BuilderScene implements Scene {
       }
       this.partsLayer.addChild(g);
     }
-    this.drawSelection();
   }
 
   private drawSelection(): void {
-    const g = this.highlightG;
+    const validIds = new Set(
+      this.ctx.design.parts.map((part) => part.id).filter((id): id is string => Boolean(id)),
+    );
+    for (const id of [...this.selectedPartIds]) {
+      if (!validIds.has(id)) this.selectedPartIds.delete(id);
+    }
+    if (this.selectedPartId && !validIds.has(this.selectedPartId)) this.selectedPartId = null;
+
+    const g = this.selectionG;
     g.clear();
     const cell = GRID_CELL_METERS;
     const rootId = this.ctx.design.rootPartId;
+    const groupDx = this.groupDrag?.dxCells ?? 0;
+    const groupDy = this.groupDrag?.dyCells ?? 0;
+    const groupPreviewValid =
+      !this.groupDrag ||
+      (groupDx === 0 && groupDy === 0) ||
+      canMoveGroup(
+        this.ctx.design,
+        this.ctx.catalog,
+        this.groupDrag.partIds,
+        groupDx,
+        groupDy,
+      );
 
     for (const placed of this.ctx.design.parts) {
       const resolved = resolvePlacedPart(placed, this.ctx.catalog);
@@ -894,20 +1175,72 @@ export class BuilderScene implements Scene {
       const { widthCells, heightCells } = resolved.props;
       const isRoot = placed.id === rootId;
       const isSelected = placed.id === this.selectedPartId;
-      if (!isRoot && !isSelected) continue;
+      const isGroupSelected = Boolean(placed.id && this.selectedPartIds.has(placed.id));
+      if (!isRoot && !isSelected && !isGroupSelected) continue;
 
       const x = placed.xCells * cell;
       const y = placed.yCells * cell;
       const w = widthCells * cell;
       const h = heightCells * cell;
-      const color = isSelected ? 0x4dff7a : 0x6eb5ff;
+      const color = isGroupSelected ? 0x63d4ff : isSelected ? 0x4dff7a : 0x6eb5ff;
       g.rect(x, y, w, h)
-        .fill({ color, alpha: isSelected ? 0.18 : 0.1 })
+        .fill({ color, alpha: isSelected || isGroupSelected ? 0.18 : 0.1 })
         .stroke({ width: 0.07, color, alpha: 0.95 });
+
+      if (isGroupSelected && (groupDx !== 0 || groupDy !== 0)) {
+        const previewColor = groupPreviewValid ? 0x4dff7a : 0xff5252;
+        g.rect(x + groupDx * cell, y + groupDy * cell, w, h)
+          .fill({ color: previewColor, alpha: 0.24 })
+          .stroke({ width: 0.06, color: previewColor, alpha: 0.9 });
+      }
       if (isRoot) {
         g.circle(x + w / 2, y + h + 0.15, 0.12).fill(0x6eb5ff).stroke({ width: 0.04, color: 0x0c111d });
       }
     }
+
+    if (this.boxSelection) {
+      const { start, end } = this.boxSelection;
+      g.rect(
+        Math.min(start.x, end.x),
+        Math.min(start.y, end.y),
+        Math.abs(end.x - start.x),
+        Math.abs(end.y - start.y),
+      )
+        .fill({ color: 0x63d4ff, alpha: 0.08 })
+        .stroke({ width: 0.06, color: 0x63d4ff, alpha: 0.8 });
+    }
+
+    this.selectionToolbar.hidden = this.selectedPartIds.size === 0;
+    this.selectionCountEl.textContent = `${this.selectedPartIds.size} selected`;
+  }
+
+  private duplicateSelection(): void {
+    const copies = duplicateGroup(
+      this.ctx.design,
+      this.ctx.catalog,
+      [...this.selectedPartIds],
+    );
+    if (!copies) {
+      this.ctx.log('warn', 'Duplicate rejected: no free space around the selection.');
+      return;
+    }
+    this.selectedPartIds = new Set(
+      copies.map((part) => part.id).filter((id): id is string => Boolean(id)),
+    );
+    this.selectedPartId = null;
+    this.designChanged();
+    this.ctx.log('info', `Duplicated ${copies.length} part(s); move the detached copy onto a mount.`);
+  }
+
+  private deleteSelection(): void {
+    const ids = [...this.selectedPartIds];
+    if (ids.length === 0) return;
+    const removed = deleteGroup(this.ctx.design, this.ctx.catalog, ids);
+    if (removed === 0) return;
+    this.selectedPartIds.clear();
+    if (this.selectedPartId && ids.includes(this.selectedPartId)) this.selectedPartId = null;
+    this.designChanged();
+    this.ctx.log('info', `Deleted ${removed} selected part(s).`);
   }
 
   private drawTransformPreview(e: PointerEvent): void {
@@ -977,12 +1310,21 @@ export class BuilderScene implements Scene {
     this.lastPreviews = previewStages(this.lastParts);
 
     const analysis = analyzeVehicle(this.lastParts, EARTH_CONFIG.surfaceGravity);
-    this.engineeringPanel.update(analysis, summarizeHabitation(this.lastParts));
+    const designWarnings = analyzeDesignWarnings(this.ctx.design, this.ctx.catalog);
+    this.engineeringPanel.update(
+      analysis,
+      summarizeHabitation(this.lastParts),
+      designWarnings,
+    );
     this.stagingPanel.update(this.lastPreviews);
 
-    const warningsKey = analysis.warnings.join('|');
+    const warningMessages = [
+      ...analysis.warnings,
+      ...designWarnings.map((warning) => warning.message),
+    ];
+    const warningsKey = warningMessages.join('|');
     if (warningsKey !== this.lastWarnings) {
-      for (const warning of analysis.warnings) this.ctx.log('warn', warning);
+      for (const warning of warningMessages) this.ctx.log('warn', warning);
       this.lastWarnings = warningsKey;
     }
 
@@ -994,7 +1336,7 @@ export class BuilderScene implements Scene {
   /** Stage preview: highlight the parts igniting in / separating at a stage. */
   private highlightStage(stage: number | null): void {
     if (stage === null) {
-      this.drawSelection();
+      this.highlightG.clear();
       return;
     }
     const g = this.highlightG;

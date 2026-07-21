@@ -126,9 +126,11 @@ CURRENT_STATUS.md.
   fractions) lives on `PartInstance`; `RocketRuntime.stepChutes` runs per
   physics step doing gradual deployment, altitude/speed/q/heat gating, and
   failure. Canopy drag is added to `dragCdA` via `chuteDragCdA`.
-- **Landing legs**: `PartInstance.legsDeployed`; `RocketRuntime.toggleLegs`,
-  `legsDeployedAtBottom`, `breakBottomLegs`. Ground contact in `RocketPhysics`
-  uses a higher crash tolerance with legs and breaks them on hard landings.
+- **Landing legs (Phase 8)**: `PartInstance.legState` (`stowed` | `deployed` |
+  `broken`); `RocketRuntime.toggleLegs`, `legsDeployedAtBottom`,
+  `breakBottomLegs`. Ground contact in `RocketPhysics` uses elevated tolerance
+  only when legs are deployed; hard landings mark legs broken (attached, dead).
+  VAB always draws stowed. Toggle: LEGS button or `L` in flight.
 - **Launch clamps**: category `clamp`, treated as a release part in
   `StageSystem` (jettisoned by staging). While present, `RocketPhysics` pins
   the vessel to the pad.

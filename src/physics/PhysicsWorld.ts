@@ -6,7 +6,7 @@ import {
 } from '../config/celestialBodies';
 import { MAX_STEPS_PER_FRAME, PHYSICS_DT } from '../config/constants';
 import { computeOrbitInfo } from '../math/OrbitMath';
-import { captureRailsOrbit, propagateRailsOrbit } from '../space/KeplerOrbit';
+import { canPropagateOnRails, captureRailsOrbit, propagateRailsOrbit } from '../space/KeplerOrbit';
 import { getDominantBody } from '../space/SphereOfInfluence';
 import type { Vessel, VesselManager } from '../systems/VesselManager';
 import { AtmosphereSystem, atmosphereHeightM } from './AtmosphereSystem';
@@ -66,7 +66,7 @@ export class PhysicsWorld {
     frameDtSec: number,
     factor: number,
     onRails: boolean,
-  ): StepEvents & { railsSoiBreak?: boolean } {
+  ): StepEvents & { railsSoiBreak?: boolean; railsAtmosphereBreak?: boolean } {
     return onRails
       ? this.advanceOnRails(frameDtSec * factor)
       : this.advanceIntegrated(frameDtSec * factor);
@@ -117,9 +117,12 @@ export class PhysicsWorld {
     return activeEvents;
   }
 
-  private advanceOnRails(simDtSec: number): StepEvents & { railsSoiBreak?: boolean } {
+  private advanceOnRails(
+    simDtSec: number,
+  ): StepEvents & { railsSoiBreak?: boolean; railsAtmosphereBreak?: boolean } {
     this.simTime += simDtSec;
     let soiBreak = false;
+    let atmosBreak = false;
     for (const vessel of this.vessels.vessels) {
       if (!vessel.railsOrbit) continue;
       // Conic is BODY-RELATIVE: translate by the capture body's live state.
@@ -128,6 +131,10 @@ export class PhysicsWorld {
       const state = propagateRailsOrbit(vessel.railsOrbit, this.simTime);
       vessel.runtime.position = body.positionAt(this.simTime).add(state.position);
       vessel.runtime.velocity = body.velocityAt(this.simTime).add(state.velocity);
+
+      const relPos = vessel.runtime.position.sub(body.positionAt(this.simTime));
+      const altitude = relPos.length() - body.radiusM;
+      if (altitude <= atmosphereHeightM(body)) atmosBreak = true;
 
       // If the vessel drifted into another body's SOI (e.g. a trans-lunar
       // ellipse reaching the Moon), the captured conic is no longer the
@@ -139,14 +146,14 @@ export class PhysicsWorld {
       );
       if (dominantNow.config.id !== vessel.railsBodyId) soiBreak = true;
     }
-    return { ...emptyStepEvents(), railsSoiBreak: soiBreak };
+    return { ...emptyStepEvents(), railsSoiBreak: soiBreak, railsAtmosphereBreak: atmosBreak };
   }
 
   /**
    * Put every simulated vessel on rails AROUND ITS OWN DOMINANT BODY —
    * a lunar orbiter rails around the Moon while debris rails around Earth.
    * The caller has already validated the ACTIVE vessel; uncontrolled vessels
-   * that cannot ride rails (suborbital/atmosphere-crossing) are removed,
+   * that cannot ride rails (escape trajectories) are removed,
    * KSP-style, with an honest log.
    * TODO: integrate airborne debris across rails warp instead of removing it.
    */
@@ -159,9 +166,7 @@ export class PhysicsWorld {
       const relPos = rt.position.sub(body.positionAt(this.simTime));
       const relVel = rt.velocity.sub(body.velocityAt(this.simTime));
       const info = computeOrbitInfo(relPos, relVel, body.mu);
-      const safeRadius = body.radiusM + atmosphereHeightM(body);
-      const stable = info.isBound && info.periapsisRadius > safeRadius;
-      const captured = stable
+      const captured = canPropagateOnRails(info)
         ? captureRailsOrbit(relPos, relVel, body.mu, this.simTime)
         : null;
 
@@ -174,7 +179,7 @@ export class PhysicsWorld {
       } else {
         this.vessels.destroyVessel(
           vessel,
-          'not on a stable orbit at rails warp (impact assumed; per-vessel propagation TODO)',
+          `not on a propagatable orbit at rails warp (e=${info.eccentricity.toFixed(2)}; per-vessel propagation TODO)`,
         );
       }
     }

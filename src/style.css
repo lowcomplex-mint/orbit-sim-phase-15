@@ -189,6 +189,24 @@ input.throttle {
   pointer-events: none;
 }
 
+.toolbar-tools {
+  position: absolute;
+  top: calc(58px + env(safe-area-inset-top));
+  left: 6px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+
+.btn.active {
+  background: #2a4570;
+  border-color: #4dff7a;
+  color: #d8ffe8;
+}
+
 .hint {
   position: absolute;
   bottom: 6px;
@@ -371,6 +389,46 @@ input.throttle {
     /* Share the right column with the staging panel (24vh + gaps). */
     max-height: calc(100% - 330px - 24vh);
   }
+}
+
+/* --- VAB snap controls (PlacementGrid) ------------------------------------ */
+
+.snap-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  padding: 2px 6px;
+  background: rgba(24, 34, 56, 0.85);
+  border: 1px solid #22304e;
+  border-radius: 8px;
+}
+
+.snap-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8fa3c8;
+}
+
+.snap-value {
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e8eefc;
+  font-variant-numeric: tabular-nums;
+}
+
+.snap-select {
+  pointer-events: auto;
+  min-height: 34px;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dbe6ff;
+  background: rgba(16, 24, 42, 0.95);
+  border: 1px solid #2a3a5c;
+  border-radius: 6px;
 }
 
 /* --- procedural part steppers ------------------------------------------------ */

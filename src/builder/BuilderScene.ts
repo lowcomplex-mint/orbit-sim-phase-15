@@ -13,7 +13,8 @@ import { buildPartGraphic } from '../render/RocketRenderer';
 import { analyzeVehicle } from '../systems/VehicleAnalysis';
 import { createButton, createRow } from '../ui/Buttons';
 import type { PartDefinition } from '../vehicle/PartDefinition';
-import type { PartInstance } from '../vehicle/PartInstance';
+import { legPose, poseInPartLocal } from '../vehicle/LandingLegs';
+import { PartInstance } from '../vehicle/PartInstance';
 import {
   clampProceduralDimensions,
   clampThrustLimiter,
@@ -26,16 +27,31 @@ import { RocketDesign, type PlacedPartData } from '../vehicle/RocketDesign';
 import { RocketRuntime } from '../vehicle/RocketRuntime';
 import { previewStages, type StagePreview } from '../vehicle/StageSystem';
 import { EditorEngineeringPanel } from './EditorEngineeringPanel';
-import { inBounds, overlapsAnyPart, worldToCell } from './GridSystem';
+import { inBounds, overlapsAnyPart, worldToGrid } from './GridSystem';
+import { formatSnapStep, snapValue } from './PlacementGrid';
 import { PartContextMenu } from './PartContextMenu';
 import { PartPalette } from './PartPalette';
+import { RotateControls } from './RotateControls';
 import { instantiateParts, validateDesign } from './RocketAssembler';
+import { SnapControls } from './SnapControls';
 import { findSnap, type DraggedPart, type SnapResult } from './SnapSystem';
 import { StagingPanel } from './StagingPanel';
+import { tryRotateSubtree, tryTranslateSubtree } from './TransformTool';
+import { mirroredParentId } from '../vehicle/PartGraph';
+import { rerootDesign, subtreeParts } from '../vehicle/PartTree';
 
 interface DragState extends DraggedPart {
   custom?: PartCustomization;
   snap: SnapResult | null;
+}
+
+type BuilderTool = 'place' | 'transform' | 'rotate' | 'reroot';
+
+interface TransformDrag {
+  rootId: string;
+  snapshots: { xCells: number; yCells: number }[];
+  startGridX: number;
+  startGridY: number;
 }
 
 /** Undo/redo depth. Snapshots are tiny (design JSON), so keep plenty. */
@@ -53,6 +69,7 @@ const HISTORY_LIMIT = 60;
  */
 export class BuilderScene implements Scene {
   private root = new Container();
+  private gridG = buildGridGraphic();
   private partsLayer = new Container();
   private ghostG = new Graphics();
   private comMarkerG = new Graphics();
@@ -64,7 +81,14 @@ export class BuilderScene implements Scene {
   private engineeringPanel!: EditorEngineeringPanel;
   private stagingPanel!: StagingPanel;
   private contextMenu!: PartContextMenu;
+  private snapControls!: SnapControls;
+  private rotateControls!: RotateControls;
   private drag: DragState | null = null;
+  private toolMode: BuilderTool = 'place';
+  private selectedPartId: string | null = null;
+  private transformDrag: TransformDrag | null = null;
+  private toolBtns: Record<BuilderTool, HTMLButtonElement> | null = null;
+  private hintEl!: HTMLDivElement;
   private lastWarnings = '';
 
   // --- editor camera state (pan/zoom/pinch) ---
@@ -103,8 +127,9 @@ export class BuilderScene implements Scene {
     this.ghostG = new Graphics();
     this.comMarkerG = new Graphics();
     this.highlightG = new Graphics();
+    this.gridG = buildGridGraphic();
     this.root.addChild(
-      buildGridGraphic(),
+      this.gridG,
       this.partsLayer,
       this.highlightG,
       this.comMarkerG,
@@ -145,6 +170,8 @@ export class BuilderScene implements Scene {
     this.stopDragListeners();
     this.drag = null;
     this.contextMenu.destroy();
+    this.snapControls.destroy();
+    this.rotateControls.destroy();
     this.palette.destroy();
     this.engineeringPanel.destroy();
     this.stagingPanel.destroy();
@@ -191,6 +218,33 @@ export class BuilderScene implements Scene {
       createButton('↷', () => this.redo(), { title: 'Redo (Ctrl+Y)' }),
       this.symBtn,
       createButton('FIT', () => this.fitView(), { title: 'Reset editor camera' }),
+    );
+    this.snapControls = new SnapControls(toolbar, (step) => {
+      this.rebuildGrid(step);
+      this.ctx.log('info', `Placement snap: ${formatSnapStep(step)}.`);
+    });
+    this.rotateControls = new RotateControls(toolbar, (step) => {
+      this.ctx.log('info', `Rotation step: ${step}°.`);
+    });
+    this.rotateControls.setEnabled(false);
+    const toolRow = createRow('toolbar-tools');
+    this.toolBtns = {
+      place: createButton('Place', () => this.setTool('place'), { title: 'Place parts (default)' }),
+      transform: createButton('Move', () => this.setTool('transform'), { title: 'Move part + subtree' }),
+      rotate: createButton('Rotate', () => this.setTool('rotate'), {
+        title: 'Disabled until Phase 13 (node overhaul)',
+      }),
+      reroot: createButton('Root', () => this.setTool('reroot'), { title: 'Set tree root part' }),
+    };
+    this.toolBtns.rotate.disabled = true;
+    this.toolBtns.rotate.classList.add('disabled');
+    toolRow.append(
+      this.toolBtns.place,
+      this.toolBtns.transform,
+      this.toolBtns.rotate,
+      this.toolBtns.reroot,
+    );
+    toolbar.append(
       createButton('Clear', () => this.clearDesign()),
       createButton('Default', () => this.loadDefault()),
       createButton('Save', () => this.saveDesign()),
@@ -198,12 +252,11 @@ export class BuilderScene implements Scene {
       createButton('LAUNCH', () => this.tryLaunch(), { className: 'primary' }),
     );
 
-    const hint = document.createElement('div');
-    hint.className = 'hint';
-    hint.textContent =
-      'Drag parts to build · right-click configures · drag empty space pans · wheel/pinch zooms.';
+    this.hintEl = document.createElement('div');
+    this.hintEl.className = 'hint';
 
-    this.uiRoot.append(toolbar, hint);
+    this.uiRoot.append(toolbar, toolRow, this.hintEl);
+    this.setTool('place');
     document.getElementById('ui-root')!.appendChild(this.uiRoot);
 
     this.palette = new PartPalette(
@@ -232,6 +285,41 @@ export class BuilderScene implements Scene {
       },
       onClosed: () => this.highlightStage(null),
     });
+  }
+
+  private setTool(mode: BuilderTool): void {
+    if (mode === 'rotate') {
+      this.ctx.log('info', 'Rotate is disabled until Phase 13 (see phase-11-pivot-rules.md).');
+      return;
+    }
+    this.toolMode = mode;
+    this.transformDrag = null;
+    this.ghostG.clear();
+    if (mode !== 'transform') this.selectedPartId = null;
+    for (const [key, btn] of Object.entries(this.toolBtns ?? {})) {
+      btn.classList.toggle('active', key === mode);
+    }
+    const hints: Record<BuilderTool, string> = {
+      place: 'Drag parts to build · right-click configures · Snap for fine placement · pan/zoom empty space.',
+      transform: 'Click a part and drag to move it with its subtree · respects Snap step.',
+      rotate: 'Click a part to select · ↺/↻ or Q/E rotate the subtree · adjust Rot step.',
+      reroot: 'Click a part to make it the tree root · staging order is unchanged.',
+    };
+    this.hintEl.textContent = hints[mode];
+    this.drawSelection();
+  }
+
+  private applyRotation(deltaDeg: number): void {
+    if (!this.selectedPartId) {
+      this.ctx.log('info', 'Select a part first (Rotate tool).');
+      return;
+    }
+    if (tryRotateSubtree(this.ctx.design, this.ctx.catalog, this.selectedPartId, deltaDeg)) {
+      this.designChanged();
+      this.ctx.log('info', `Rotated ${deltaDeg > 0 ? '+' : ''}${deltaDeg}°.`);
+    } else {
+      this.ctx.log('warn', 'Rotation rejected: parts would overlap or leave the grid.');
+    }
   }
 
   private clearDesign(): void {
@@ -415,13 +503,53 @@ export class BuilderScene implements Scene {
    * start panning the editor camera (two pointers pinch-zoom).
    */
   private onCanvasDown(e: PointerEvent): void {
-    if (this.drag || e.button !== 0) return;
+    if (this.drag || this.transformDrag || e.button !== 0) return;
     const world = this.pointerToWorld(e);
-    const cell = worldToCell(world);
-    const placed = this.ctx.design.partAtCell(cell.xCells, cell.yCells, this.ctx.catalog);
+    const grid = worldToGrid(world);
+    const placed = this.ctx.design.partAtGrid(grid.xCells, grid.yCells, this.ctx.catalog);
+
+    if (this.toolMode === 'reroot') {
+      if (placed?.id && rerootDesign(this.ctx.design, placed.id)) {
+        this.selectedPartId = placed.id;
+        this.designChanged();
+        this.ctx.log('info', 'Tree root updated.');
+      }
+      return;
+    }
+
+    if (this.toolMode === 'rotate') {
+      this.selectedPartId = placed?.id ?? null;
+      this.drawSelection();
+      if (!placed) this.ctx.log('info', 'Click a part to select for rotation.');
+      return;
+    }
+
+    if (this.toolMode === 'transform') {
+      if (!placed?.id) {
+        this.panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        try {
+          this.renderer.canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* non-fatal */
+        }
+        return;
+      }
+      this.selectedPartId = placed.id;
+      const members = subtreeParts(this.ctx.design, placed.id);
+      this.transformDrag = {
+        rootId: placed.id,
+        snapshots: members.map((p) => ({ xCells: p.xCells, yCells: p.yCells })),
+        startGridX: grid.xCells,
+        startGridY: grid.yCells,
+      };
+      window.addEventListener('pointermove', this.pointerMoveHandler);
+      window.addEventListener('pointerup', this.pointerUpHandler);
+      this.drawSelection();
+      return;
+    }
+
+    // Place tool: pick up part under cursor, otherwise pan.
     if (!placed) {
-      // Empty grid: pan/pinch. TODO: box selection of multiple parts here
-      // (needs a selection model + group move/duplicate; planned).
       this.panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         this.renderer.canvas.setPointerCapture(e.pointerId);
@@ -487,13 +615,24 @@ export class BuilderScene implements Scene {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
-    if (!e.ctrlKey && !e.metaKey) return;
-    if (e.code === 'KeyZ' && !e.shiftKey) {
-      e.preventDefault();
-      this.undo();
-    } else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
-      e.preventDefault();
-      this.redo();
+    if (e.ctrlKey || e.metaKey) {
+      if (e.code === 'KeyZ' && !e.shiftKey) {
+        e.preventDefault();
+        this.undo();
+      } else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
+        e.preventDefault();
+        this.redo();
+      }
+      return;
+    }
+    if (this.toolMode === 'rotate' && this.selectedPartId) {
+      if (e.code === 'KeyQ') {
+        e.preventDefault();
+        this.applyRotation(-this.rotateControls.rotateStep);
+      } else if (e.code === 'KeyE') {
+        e.preventDefault();
+        this.applyRotation(this.rotateControls.rotateStep);
+      }
     }
   }
 
@@ -501,8 +640,8 @@ export class BuilderScene implements Scene {
     e.preventDefault();
     if (this.drag) return;
     const world = this.pointerToWorld(e as unknown as PointerEvent);
-    const cell = worldToCell(world);
-    const placed = this.ctx.design.partAtCell(cell.xCells, cell.yCells, this.ctx.catalog);
+    const grid = worldToGrid(world);
+    const placed = this.ctx.design.partAtGrid(grid.xCells, grid.yCells, this.ctx.catalog);
     if (!placed) {
       this.contextMenu.close();
       return;
@@ -523,13 +662,49 @@ export class BuilderScene implements Scene {
   }
 
   private onPointerMove(e: PointerEvent): void {
+    if (this.transformDrag) {
+      this.drawTransformPreview(e);
+      return;
+    }
     if (!this.drag) return;
     const world = this.pointerToWorld(e);
-    this.drag.snap = findSnap(this.ctx.design, this.ctx.catalog, this.drag, world);
+    this.drag.snap = findSnap(
+      this.ctx.design,
+      this.ctx.catalog,
+      this.drag,
+      world,
+      this.snapControls.snapStep,
+    );
     this.drawGhost();
   }
 
-  private onPointerUp(_e: PointerEvent): void {
+  private onPointerUp(e: PointerEvent): void {
+    if (this.transformDrag) {
+      const drag = this.transformDrag;
+      this.transformDrag = null;
+      this.stopDragListeners();
+      this.ghostG.clear();
+      const members = subtreeParts(this.ctx.design, drag.rootId);
+      for (let i = 0; i < members.length; i++) {
+        members[i].xCells = drag.snapshots[i].xCells;
+        members[i].yCells = drag.snapshots[i].yCells;
+      }
+      const grid = worldToGrid(this.pointerToWorld(e));
+      const step = this.snapControls.snapStep;
+      const dx = snapValue(grid.xCells - drag.startGridX, step);
+      const dy = snapValue(grid.yCells - drag.startGridY, step);
+      if (dx !== 0 || dy !== 0) {
+        if (tryTranslateSubtree(this.ctx.design, this.ctx.catalog, drag.rootId, dx, dy)) {
+          this.designChanged();
+          this.ctx.log('info', `Moved subtree (${dx > 0 ? '+' : ''}${dx}, ${dy > 0 ? '+' : ''}${dy}).`);
+        } else {
+          this.ctx.log('warn', 'Move rejected: parts would overlap or leave the grid.');
+          this.redrawParts();
+        }
+      }
+      this.drawSelection();
+      return;
+    }
     if (!this.drag) return;
     const { def, custom, snap } = this.drag;
     this.drag = null;
@@ -537,14 +712,25 @@ export class BuilderScene implements Scene {
     this.ghostG.clear();
 
     if (snap?.valid) {
-      this.ctx.design.addPart(def.id, snap.xCells, snap.yCells, custom);
+      this.ctx.design.addPart(def.id, snap.xCells, snap.yCells, custom, snap.parentId ?? null);
       // Mirror symmetry: also place the twin across the center column,
       // unless it would coincide with the original or collide.
       if (this.symmetryOn) {
         const props = resolvePartProps(def, custom);
         const mx = this.mirroredX(snap.xCells, props.widthCells);
+        const mirrorParent = mirroredParentId(
+          this.ctx.design,
+          this.ctx.catalog,
+          snap.parentId,
+        );
         if (mx !== snap.xCells && this.canPlaceAt(props, mx, snap.yCells)) {
-          this.ctx.design.addPart(def.id, mx, snap.yCells, custom ? { ...custom } : undefined);
+          this.ctx.design.addPart(
+            def.id,
+            mx,
+            snap.yCells,
+            custom ? { ...custom } : undefined,
+            mirrorParent,
+          );
         } else if (mx !== snap.xCells) {
           this.ctx.log('warn', 'Symmetry twin skipped: no room on the mirrored side.');
         }
@@ -566,6 +752,13 @@ export class BuilderScene implements Scene {
   }
 
   // ------------------------------------------------------------- drawing --
+
+  /** Rebuild the background grid when the snap step changes. */
+  private rebuildGrid(snapStep: number): void {
+    this.gridG.destroy();
+    this.gridG = buildGridGraphic(snapStep);
+    this.root.addChildAt(this.gridG, 0);
+  }
 
   /**
    * Single funnel for "the design changed": redraw + all panels refresh +
@@ -626,20 +819,134 @@ export class BuilderScene implements Scene {
     );
   }
 
-  private redrawParts(): void {
-    this.partsLayer.removeChildren().forEach((c) => c.destroy());
-    const cell = GRID_CELL_METERS;
+  /** Bottom-center column of the design (same frame as flight stack origin). */
+  private designStackOrigin(): { xCells: number; yCells: number } {
+    if (this.ctx.design.isEmpty) return { xCells: 0, yCells: 0 };
+    let bottom = this.ctx.design.parts[0];
     for (const placed of this.ctx.design.parts) {
       const resolved = resolvePlacedPart(placed, this.ctx.catalog);
       if (!resolved) continue;
+      if (placed.yCells < bottom.yCells) bottom = placed;
+    }
+    const resolved = resolvePlacedPart(bottom, this.ctx.catalog);
+    const w = resolved?.props.widthCells ?? 1;
+    return { xCells: bottom.xCells + w / 2, yCells: bottom.yCells };
+  }
+
+  private redrawParts(): void {
+    this.partsLayer.removeChildren().forEach((c) => c.destroy());
+    const cell = GRID_CELL_METERS;
+    const origin = this.designStackOrigin();
+    const baseXM = origin.xCells * cell;
+    const baseYM = origin.yCells * cell;
+    for (const placed of this.ctx.design.parts) {
+      const resolved = resolvePlacedPart(placed, this.ctx.catalog);
+      if (!resolved) continue;
+      const { widthCells, heightCells } = resolved.props;
+      let legPosePart: ReturnType<typeof poseInPartLocal> | undefined;
+      if (resolved.def.category === 'legs') {
+        const inst = new PartInstance(
+          resolved.def,
+          placed.xCells,
+          placed.yCells,
+          placed.custom,
+          placed.rotationDeg ?? 0,
+        );
+        legPosePart = poseInPartLocal(
+          legPose(inst, 'stowed', baseXM, baseYM, origin.xCells),
+          inst,
+          baseXM,
+          baseYM,
+        );
+      }
       const g = buildPartGraphic(
         resolved.def,
-        resolved.props.widthCells,
-        resolved.props.heightCells,
+        widthCells,
+        heightCells,
         placed.custom?.variant,
+        'stowed',
+        legPosePart,
       );
-      g.position.set(placed.xCells * cell, placed.yCells * cell);
+      const rot = placed.rotationDeg ?? 0;
+      if (rot !== 0) {
+        const w = widthCells * cell;
+        const h = heightCells * cell;
+        g.pivot.set(w / 2, h / 2);
+        g.position.set(placed.xCells * cell + w / 2, placed.yCells * cell + h / 2);
+        g.rotation = (rot * Math.PI) / 180;
+      } else {
+        g.position.set(placed.xCells * cell, placed.yCells * cell);
+      }
       this.partsLayer.addChild(g);
+    }
+    this.drawSelection();
+  }
+
+  private drawSelection(): void {
+    const g = this.highlightG;
+    g.clear();
+    const cell = GRID_CELL_METERS;
+    const rootId = this.ctx.design.rootPartId;
+
+    for (const placed of this.ctx.design.parts) {
+      const resolved = resolvePlacedPart(placed, this.ctx.catalog);
+      if (!resolved) continue;
+      const { widthCells, heightCells } = resolved.props;
+      const isRoot = placed.id === rootId;
+      const isSelected = placed.id === this.selectedPartId;
+      if (!isRoot && !isSelected) continue;
+
+      const x = placed.xCells * cell;
+      const y = placed.yCells * cell;
+      const w = widthCells * cell;
+      const h = heightCells * cell;
+      const color = isSelected ? 0x4dff7a : 0x6eb5ff;
+      g.rect(x, y, w, h)
+        .fill({ color, alpha: isSelected ? 0.18 : 0.1 })
+        .stroke({ width: 0.07, color, alpha: 0.95 });
+      if (isRoot) {
+        g.circle(x + w / 2, y + h + 0.15, 0.12).fill(0x6eb5ff).stroke({ width: 0.04, color: 0x0c111d });
+      }
+    }
+  }
+
+  private drawTransformPreview(e: PointerEvent): void {
+    const drag = this.transformDrag;
+    if (!drag) return;
+    const grid = worldToGrid(this.pointerToWorld(e));
+    const step = this.snapControls.snapStep;
+    const dx = snapValue(grid.xCells - drag.startGridX, step);
+    const dy = snapValue(grid.yCells - drag.startGridY, step);
+    const g = this.ghostG;
+    g.clear();
+    const cell = GRID_CELL_METERS;
+    const members = subtreeParts(this.ctx.design, drag.rootId);
+    for (let i = 0; i < members.length; i++) {
+      members[i].xCells = drag.snapshots[i].xCells;
+      members[i].yCells = drag.snapshots[i].yCells;
+    }
+    const valid =
+      (dx === 0 && dy === 0) ||
+      tryTranslateSubtree(this.ctx.design, this.ctx.catalog, drag.rootId, dx, dy);
+    if (dx !== 0 || dy !== 0) {
+      for (let i = 0; i < members.length; i++) {
+        members[i].xCells = drag.snapshots[i].xCells;
+        members[i].yCells = drag.snapshots[i].yCells;
+      }
+    }
+    const color = valid ? 0x4dff7a : 0xff5252;
+    for (let i = 0; i < members.length; i++) {
+      const resolved = resolvePlacedPart(members[i], this.ctx.catalog);
+      if (!resolved) continue;
+      const { widthCells, heightCells } = resolved.props;
+      g.rect(
+        (drag.snapshots[i].xCells + dx) * cell,
+        (drag.snapshots[i].yCells + dy) * cell,
+        widthCells * cell,
+        heightCells * cell,
+      )
+        .fill({ color, alpha: 0.3 })
+        .stroke({ width: 0.06, color, alpha: 0.9 });
     }
   }
 
@@ -657,6 +964,7 @@ export class BuilderScene implements Scene {
 
     try {
       this.lastParts = instantiateParts(this.ctx.design, this.ctx.catalog);
+      this.ctx.design.ensureTree(this.ctx.catalog, this.lastParts);
     } catch (err) {
       this.ctx.log('warn', `Analysis skipped: ${String(err)}`);
       this.engineeringPanel.update(null, null);
@@ -685,9 +993,12 @@ export class BuilderScene implements Scene {
 
   /** Stage preview: highlight the parts igniting in / separating at a stage. */
   private highlightStage(stage: number | null): void {
+    if (stage === null) {
+      this.drawSelection();
+      return;
+    }
     const g = this.highlightG;
     g.clear();
-    if (stage === null) return;
     const preview = this.lastPreviews[stage - 1];
     if (!preview) return;
 

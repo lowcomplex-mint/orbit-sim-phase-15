@@ -1,7 +1,7 @@
 import type { PartDefinition } from '../vehicle/PartDefinition';
+import { validateStructure } from '../vehicle/PartGraph';
 import { PartInstance } from '../vehicle/PartInstance';
 import type { RocketDesign } from '../vehicle/RocketDesign';
-import { partsAttached } from '../vehicle/StageSystem';
 
 /**
  * Turns a design into flyable part instances, and validates that the design
@@ -21,7 +21,9 @@ export function instantiateParts(
   for (const placed of design.parts) {
     const def = catalog.get(placed.defId);
     if (!def) throw new Error(`Unknown part id in design: ${placed.defId}`);
-    instances.push(new PartInstance(def, placed.xCells, placed.yCells, placed.custom));
+    instances.push(
+      new PartInstance(def, placed.xCells, placed.yCells, placed.custom, placed.rotationDeg ?? 0),
+    );
   }
   return instances;
 }
@@ -47,26 +49,9 @@ export function validateDesign(
     problems.push('The rocket needs at least one fuel tank.');
   }
 
-  // Connectivity: parts are linked when compatible nodes coincide exactly
-  // (top/bottom or left/right). BFS from the first part must reach all.
-  if (parts.length > 1) {
-    const visited = new Set<PartInstance>([parts[0]]);
-    const queue: PartInstance[] = [parts[0]];
-    while (queue.length > 0) {
-      const current = queue.pop()!;
-      for (const other of parts) {
-        if (visited.has(other)) continue;
-        if (partsAttached(current, other)) {
-          visited.add(other);
-          queue.push(other);
-        }
-      }
-    }
-    if (visited.size < parts.length) {
-      problems.push(
-        `${parts.length - visited.size} part(s) are not attached to the rocket.`,
-      );
-    }
+  const structure = validateStructure(design, catalog);
+  for (const msg of structure.problems) {
+    if (!problems.includes(msg)) problems.push(msg);
   }
 
   return { ok: problems.length === 0, problems };

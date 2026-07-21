@@ -5,12 +5,14 @@
  * Covers: vehicle analysis (incl. thrust limiter), torque-based attitude,
  * ascent + staging (persistent debris), ignition-stage overrides, physics
  * warp, rails-warp gating/accuracy/handoff, save round-trip determinism,
- * and SOI-aware (Moon-relative) telemetry.
+ * SOI-aware (Moon-relative) telemetry, and Phase 10 recovery-loop sims
+ * (parachutes, launch clamps, electricity, full descent mission).
  */
 import { instantiateParts, validateDesign } from '../src/builder/RocketAssembler';
 import { DEFAULT_ROCKET_DESIGN } from '../src/config/defaultRocket';
 import { EARTH_CONFIG } from '../src/config/celestialBodies';
 import { createPartCatalog } from '../src/config/parts';
+import { airDensityAt } from '../src/physics/AtmosphereSystem';
 import { computeOrbitInfo, orbitalPeriod } from '../src/math/OrbitMath';
 import { Vec2 } from '../src/math/Vec2';
 import { Telemetry } from '../src/flight/Telemetry';
@@ -18,7 +20,11 @@ import { CareerSystem, designCost } from '../src/systems/CareerSystem';
 import { FlightSession } from '../src/systems/FlightSession';
 import { TimeWarpMode } from '../src/systems/TimeWarpSystem';
 import { analyzeVehicle } from '../src/systems/VehicleAnalysis';
+import { stepRocket, type PhysicsEnvironment } from '../src/physics/RocketPhysics';
+import { CHUTE_PRESETS } from '../src/vehicle/ProceduralPart';
+import type { LegState } from '../src/vehicle/ProceduralPart';
 import { RocketDesign } from '../src/vehicle/RocketDesign';
+import { RocketRuntime } from '../src/vehicle/RocketRuntime';
 
 const TARGET_APOAPSIS = 90_000; // m
 const SAFE_ALTITUDE = 72_000; // just above the 70 km atmosphere
@@ -38,6 +44,38 @@ const design = RocketDesign.fromData(DEFAULT_ROCKET_DESIGN);
 const quietLog = (level: string, message: string) => {
   if (level !== 'info') console.log(`  [${level}] ${message}`);
 };
+
+function physicsEnv(session: FlightSession, heatingEnabled = false): PhysicsEnvironment {
+  return {
+    gravity: session.world.gravity,
+    bodies: session.world.bodies,
+    simTime: session.world.simTime,
+    heatingEnabled,
+  };
+}
+
+/** Minimal stack with a configured parachute (armed). */
+function chuteTestRuntime(chuteConfig: (typeof CHUTE_PRESETS)[string]['config']) {
+  const design = new RocketDesign('Chute test', [
+    { defId: 'engine-mule', xCells: -1, yCells: 0 },
+    {
+      defId: 'procedural-fuel-tank',
+      xCells: -1,
+      yCells: 2,
+      custom: { widthCells: 2, heightCells: 2 },
+    },
+    { defId: 'pod-mk1', xCells: -1, yCells: 4 },
+    {
+      defId: 'parachute-1',
+      xCells: -0.5,
+      yCells: 6,
+      custom: { chute: chuteConfig },
+    },
+  ]);
+  const runtime = new RocketRuntime(instantiateParts(design, catalog));
+  runtime.armParachutes();
+  return { design, runtime, chute: runtime.parachutes[0]! };
+}
 
 // ---------------------------------------------------------------- analysis --
 console.log('== Vehicle analysis ==');
@@ -166,7 +204,7 @@ while (phase !== 'done' && world.simTime < 4000 && !rocket.crashed) {
           `apoapsis ${(s.apoAlt / 1000).toFixed(1)} km`,
       );
       session.stepWarp(4);
-      check(session.warp.mode !== TimeWarpMode.RailsWarp, 'rails warp denied while suborbital');
+      check(session.warp.mode !== TimeWarpMode.RailsWarp, 'rails warp denied inside the atmosphere');
       railsDenialTested = true;
     }
   } else if (phase === 'coast') {
@@ -278,6 +316,29 @@ while (world.simTime < handoffEnd && !rocket.crashed) {
 check(handoffMinAlt > 70_000 && !rocket.crashed,
   'integrator continued cleanly after rails handoff');
 
+// Suborbital return: rails allowed in vacuum, drops on atmosphere entry.
+for (let i = 0; i < 7; i++) session.stepWarp(-1);
+rocket.throttle = 0;
+const R = world.earth.radiusM;
+const atmH = 70_000;
+rocket.position = new Vec2(0, R + 200_000);
+rocket.velocity = new Vec2(2000, 0);
+rocket.landed = false;
+const subInfo = computeOrbitInfo(rocket.position, rocket.velocity, mu);
+check(
+  subInfo.isBound && subInfo.periapsisRadius < R + atmH,
+  'test trajectory is suborbital (periapsis inside atmosphere)',
+);
+check(session.checkRailsEligibility().ok, 'rails warp allowed on suborbital arc outside atmosphere');
+for (let i = 0; i < 5; i++) session.stepWarp(1);
+check(session.warp.mode === TimeWarpMode.RailsWarp, 'rails warp engages on suborbital coast');
+const t0 = world.simTime;
+while (world.simTime < t0 + 5000 && session.warp.mode === TimeWarpMode.RailsWarp) {
+  session.update(1);
+}
+check(session.warp.mode !== TimeWarpMode.RailsWarp, 'rails warp drops on atmosphere entry');
+check(!rocket.crashed, 'suborbital rails handoff did not crash');
+
 // --------------------------------------------------- SOI-aware telemetry --
 console.log('== Moon SOI telemetry ==');
 {
@@ -338,7 +399,12 @@ console.log('== Radial boosters ==');
     // Core (stock orbiter layout)
     { defId: 'engine-mule', xCells: -1, yCells: 0 },
     { defId: 'procedural-fuel-tank', xCells: -1, yCells: 2, custom: { widthCells: 2, heightCells: 4 } },
-    { defId: 'decoupler-1', xCells: -1, yCells: 6 },
+    {
+      defId: 'procedural-decoupler',
+      xCells: -1,
+      yCells: 6,
+      custom: { widthCells: 2, heightCells: 1 },
+    },
     { defId: 'engine-wisp', xCells: -1, yCells: 7 },
     { defId: 'procedural-fuel-tank', xCells: -1, yCells: 9, custom: { widthCells: 2, heightCells: 2 } },
     { defId: 'pod-mk1', xCells: -1, yCells: 11 },
@@ -533,6 +599,333 @@ console.log('== Career foundations ==');
   );
 }
 
+// ------------------------------------------------------- landing legs (P8) --
+console.log('== Landing legs ==');
+{
+  const legDesign = new RocketDesign('Leg test', [
+    { defId: 'engine-mule', xCells: -1, yCells: 0 },
+    {
+      defId: 'procedural-fuel-tank',
+      xCells: -1,
+      yCells: 2,
+      custom: { widthCells: 2, heightCells: 2 },
+    },
+    { defId: 'legs-1', xCells: -2, yCells: 2 },
+    { defId: 'pod-mk1', xCells: -1, yCells: 4 },
+  ]);
+  const legValid = validateDesign(legDesign, catalog);
+  check(legValid.ok, `leg test design validates (${legValid.problems.join('; ')})`);
+
+  const touchdown = (legState: LegState, impactSpeedMS: number) => {
+    const parts = instantiateParts(legDesign, catalog);
+    for (const p of parts) {
+      if (p.def.category === 'legs') p.legState = legState;
+    }
+    const runtime = new RocketRuntime(parts);
+    runtime.spawnAt(new Vec2(0, EARTH_CONFIG.radiusM));
+    runtime.landed = false;
+    runtime.velocity = new Vec2(0, -impactSpeedMS);
+    const session = FlightSession.launchNew(legDesign, catalog, quietLog);
+    stepRocket(runtime, {
+      gravity: session.world.gravity,
+      bodies: session.world.bodies,
+      simTime: 0,
+      heatingEnabled: false,
+    }, 1 / 60);
+    const leg = runtime.parts.find((p) => p.def.category === 'legs')!;
+    return { crashed: runtime.crashed, landed: runtime.landed, legState: leg.legState };
+  };
+
+  const soft = touchdown('deployed', 8);
+  check(soft.landed && !soft.crashed && soft.legState === 'deployed', 'deployed legs survive a soft touchdown');
+
+  const stowedHard = touchdown('stowed', 15);
+  check(stowedHard.crashed, 'stowed legs crash at 15 m/s (no tolerance bonus)');
+
+  const deployedHard = touchdown('deployed', 15);
+  check(
+    deployedHard.landed && !deployedHard.crashed && deployedHard.legState === 'broken',
+    'deployed legs break but vehicle survives at 15 m/s',
+  );
+
+  const excessive = touchdown('deployed', 25);
+  check(excessive.crashed, 'deployed legs still crash above leg tolerance (25 m/s)');
+
+  // Soft land with residual horizontal speed must stick — no skating around Earth.
+  {
+    const parts = instantiateParts(legDesign, catalog);
+    for (const p of parts) {
+      if (p.def.category === 'legs') p.legState = 'deployed';
+    }
+    const runtime = new RocketRuntime(parts);
+    runtime.spawnAt(new Vec2(0, EARTH_CONFIG.radiusM));
+    runtime.landed = false;
+    runtime.velocity = new Vec2(40, -6); // lateral + soft vertical
+    const session = FlightSession.launchNew(legDesign, catalog, quietLog);
+    const env = physicsEnv(session);
+    stepRocket(runtime, env, 1 / 60);
+    check(runtime.landed && !runtime.crashed, 'lateral soft land still counts as landed');
+    check(runtime.velocity.length() < 0.05, 'soft land sticks to surface (no residual skate velocity)');
+    const x0 = runtime.position.x;
+    for (let i = 0; i < 600; i++) stepRocket(runtime, env, 1 / 60);
+    check(Math.abs(runtime.position.x - x0) < 0.5, 'resting vessel does not skate along the surface');
+    check(runtime.landed, 'resting vessel stays landed over 10 s');
+  }
+}
+
+// -------------------------------------------------------- parachutes (P10) --
+console.log('== Parachutes ==');
+{
+  const session = FlightSession.launchNew(
+    RocketDesign.fromData(DEFAULT_ROCKET_DESIGN),
+    catalog,
+    quietLog,
+  );
+  const env = physicsEnv(session);
+  const R = EARTH_CONFIG.radiusM;
+  const dt = 1 / 60;
+
+  const combo = chuteTestRuntime(CHUTE_PRESETS.combo.config);
+  combo.runtime.position = new Vec2(0, R + 4500);
+  combo.runtime.velocity = new Vec2(90, 0);
+  combo.runtime.landed = false;
+  combo.runtime.angleRad = Math.PI / 2;
+  let dragBefore = 0;
+  for (let i = 0; i < 360; i++) {
+    dragBefore = combo.runtime.chuteDragCdA;
+    stepRocket(combo.runtime, env, dt);
+  }
+  check(combo.chute.drogueFraction >= 1, 'combo drogue deploys below 4× main altitude');
+  check(
+    airDensityAt(session.world.earth, 4500) > 1e-5,
+    'drogue test runs inside the atmosphere',
+  );
+
+  combo.runtime.position = new Vec2(0, R + 900);
+  combo.runtime.velocity = new Vec2(35, -15);
+  combo.chute.drogueFraction = 1;
+  for (let i = 0; i < 720; i++) stepRocket(combo.runtime, env, dt);
+  check(
+    combo.chute.mainFraction > 0.4 || combo.chute.chuteState === 'deployed',
+    'main canopy opens below deploy altitude',
+  );
+  check(
+    combo.runtime.chuteDragCdA > dragBefore + 0.5,
+    'deployed canopy adds substantial drag',
+  );
+
+  const unsafe = chuteTestRuntime(CHUTE_PRESETS.smallMain.config);
+  unsafe.runtime.position = new Vec2(0, R + 1000);
+  unsafe.runtime.velocity = new Vec2(40, -8);
+  unsafe.runtime.landed = false;
+  unsafe.runtime.angleRad = Math.PI / 2;
+  for (let i = 0; i < 900; i++) stepRocket(unsafe.runtime, env, dt);
+  check(unsafe.chute.mainFraction > 0.2, 'main opens inside the safe envelope first');
+  unsafe.runtime.velocity = new Vec2(360, 0);
+  for (let i = 0; i < 120; i++) stepRocket(unsafe.runtime, env, dt);
+  check(unsafe.chute.chuteState === 'failed', 'chute fails outside the safe speed envelope');
+}
+
+// ---------------------------------------------------- launch clamps (P10) --
+console.log('== Launch clamps ==');
+{
+  const clampDesign = new RocketDesign('Clamp test', [
+    { defId: 'engine-mule', xCells: -1, yCells: 0 },
+    {
+      defId: 'procedural-fuel-tank',
+      xCells: -1,
+      yCells: 2,
+      custom: { widthCells: 2, heightCells: 2 },
+    },
+    { defId: 'pod-mk1', xCells: -1, yCells: 4 },
+    {
+      defId: 'launch-clamp',
+      xCells: -2,
+      yCells: 0,
+      custom: { igniteStage: 2 },
+    },
+  ]);
+  const clampValid = validateDesign(clampDesign, catalog);
+  check(clampValid.ok, `clamp design validates (${clampValid.problems.join('; ')})`);
+
+  const cs = FlightSession.launchNew(clampDesign, catalog, quietLog);
+  const cr = cs.activeRuntime;
+  const padY = cr.position.y;
+  cr.throttle = 1;
+  for (let i = 0; i < 24; i++) cs.update(0.5);
+  check(cr.hasLaunchClamps, 'clamps hold the vessel on the pad');
+  check(Math.abs(cr.position.y - padY) < 0.2, 'clamped vessel does not translate under thrust');
+
+  check(cs.stage() !== null, 'stage 1 fires while clamps remain');
+  check(cr.hasLaunchClamps, 'clamp still attached after its ignition stage');
+  const pinnedY = cr.position.y;
+  for (let i = 0; i < 16; i++) cs.update(0.5);
+  check(Math.abs(cr.position.y - pinnedY) < 0.2, 'vessel stays pinned through stage-1 burn');
+
+  const vesselCountBefore = cs.vessels.vessels.length;
+  check(cs.stage() !== null, 'stage 2 releases the clamp');
+  check(!cr.hasLaunchClamps, 'active vessel no longer reports launch clamps');
+  check(!cr.parts.some((p) => p.def.category === 'clamp'), 'clamp part removed from active stack');
+  check(
+    cs.vessels.vessels.length > vesselCountBefore,
+    'released clamp becomes a separate debris vessel',
+  );
+  check(
+    cs.vessels.vessels.some((v) =>
+      v.runtime.parts.some((p) => p.def.category === 'clamp'),
+    ),
+    'debris vessel still contains the clamp part',
+  );
+
+  for (let i = 0; i < 40; i++) cs.update(0.5);
+  check(!cr.landed && cr.position.y > padY + 2, 'vessel lifts off once clamps are gone');
+}
+
+// ------------------------------------------------------ electricity (P10) --
+console.log('== Electricity ==');
+{
+  const elecDesign = new RocketDesign('Electric test', [
+    { defId: 'engine-mule', xCells: -1, yCells: 0 },
+    {
+      defId: 'procedural-fuel-tank',
+      xCells: -1,
+      yCells: 2,
+      custom: { widthCells: 2, heightCells: 2 },
+    },
+    { defId: 'probe-1', xCells: -1, yCells: 4 },
+    { defId: 'battery-1', xCells: -2, yCells: 4 },
+    { defId: 'solar-1', xCells: 1, yCells: 4 },
+  ]);
+  const es = FlightSession.launchNew(elecDesign, catalog, quietLog);
+  const er = es.activeRuntime;
+  const charge0 = er.electricCharge;
+  er.throttle = 1;
+  while (er.landed && es.world.simTime < 12) es.update(0.5);
+  for (let i = 0; i < 20; i++) es.update(0.5);
+  check(!er.landed, 'electric test stack lifts off');
+  check(er.electricCharge > 0, 'battery stays charged during sunlit ascent');
+
+  const probeOnly = new RocketRuntime(
+    instantiateParts(new RocketDesign('Probe wheel test', [{ defId: 'probe-1', xCells: -1, yCells: 0 }]), catalog),
+  );
+  const R = EARTH_CONFIG.radiusM;
+  probeOnly.spawnAt(new Vec2(0, R + 250_000));
+  probeOnly.landed = false;
+  probeOnly.electricCharge = 0.5;
+  probeOnly.sasMode = 'stability';
+  probeOnly.rotationInput = 1;
+  const env = physicsEnv(es);
+  for (let i = 0; i < 30; i++) stepRocket(probeOnly, env, 0.5);
+  check(probeOnly.electricCharge === 0, 'probe battery drains to zero in eclipse (no sun)');
+  check(probeOnly.reactionWheelNm === 0, 'reaction wheels offline at zero charge');
+
+  probeOnly.angularVelocityRadS = 0;
+  for (let i = 0; i < 24; i++) stepRocket(probeOnly, env, 0.5);
+  check(
+    Math.abs(probeOnly.angularVelocityRadS) < 0.03,
+    'depleted probe cannot SAS-spin (no wheel torque)',
+  );
+
+  probeOnly.electricCharge = probeOnly.electricCapacity;
+  check(probeOnly.reactionWheelNm > 0, 'charged probe regains wheel torque');
+  probeOnly.angularVelocityRadS = 0;
+  probeOnly.sasMode = 'off';
+  for (let i = 0; i < 37; i++) stepRocket(probeOnly, env, 0.5);
+  check(
+    Math.abs(probeOnly.angularVelocityRadS) > 0.05,
+    'charged probe spins under player rotation input',
+  );
+
+  probeOnly.electricCharge = 15;
+  probeOnly.sasMode = 'stability';
+  for (let i = 0; i < 240; i++) probeOnly.updateElectricity(0.5, 0);
+  check(probeOnly.electricCharge < 8, 'eclipse drain draws the battery down without solar');
+  er.electricCharge = charge0;
+  er.sasMode = 'off';
+  for (let i = 0; i < 60; i++) er.updateElectricity(0.5, 0);
+  const eclipseDrain = er.electricCharge;
+  for (let i = 0; i < 120; i++) er.updateElectricity(0.5, 1);
+  check(er.electricCharge > eclipseDrain, 'solar panels recharge the battery after eclipse');
+}
+
+// --------------------------------------------- full recovery mission (P10) --
+console.log('== Full recovery mission ==');
+{
+  const recoveryDesign = new RocketDesign('Recovery capstone', [
+    { defId: 'engine-mule', xCells: -1, yCells: 0 },
+    {
+      defId: 'procedural-fuel-tank',
+      xCells: -1,
+      yCells: 2,
+      custom: { widthCells: 2, heightCells: 3 },
+    },
+    { defId: 'legs-1', xCells: -2, yCells: 2 },
+    { defId: 'legs-1', xCells: 1, yCells: 2 },
+    { defId: 'pod-mk1', xCells: -1, yCells: 5 },
+    {
+      defId: 'parachute-1',
+      xCells: -0.5,
+      yCells: 7,
+      custom: { chute: CHUTE_PRESETS.combo.config },
+    },
+    {
+      defId: 'launch-clamp',
+      xCells: -2,
+      yCells: 0,
+      custom: { igniteStage: 2 },
+    },
+  ]);
+  const recValid = validateDesign(recoveryDesign, catalog);
+  check(recValid.ok, `recovery design validates (${recValid.problems.join('; ')})`);
+
+  const rs = FlightSession.launchNew(recoveryDesign, catalog, quietLog);
+  const rr = rs.activeRuntime;
+  const R = EARTH_CONFIG.radiusM;
+  const padY = rr.position.y;
+
+  rr.throttle = 1;
+  while (rr.hasLaunchClamps && rs.world.simTime < 8) rs.update(0.5);
+  check(rr.hasLaunchClamps, 'mission starts clamped to the pad');
+  rs.stage();
+  check(rr.hasLaunchClamps, 'first stage leaves clamps engaged');
+  rs.stage();
+  check(!rr.hasLaunchClamps, 'second stage releases clamps');
+  for (let i = 0; i < 24; i++) rs.update(0.5);
+  check(rr.position.y > padY + 5, 'mission ascends after clamp release');
+
+  rr.position = new Vec2(0, R + 3500);
+  rr.velocity = new Vec2(35, -55);
+  rr.landed = false;
+  rr.angleRad = Math.PI / 2;
+  rr.armParachutes();
+  for (const p of rr.parts) {
+    if (p.def.category === 'legs') p.legState = 'deployed';
+  }
+
+  let landed = false;
+  for (let i = 0; i < 10_000 && !rr.crashed; i++) {
+    rs.update(1 / 30);
+    if (rr.landed) {
+      landed = true;
+      break;
+    }
+  }
+  const chute = rr.parachutes[0]!;
+  console.log(
+    `  Touchdown: landed=${landed}, crashed=${rr.crashed}, ` +
+      `chute=${chute.chuteState}, legs=${rr.parts.filter((p) => p.def.category === 'legs').map((p) => p.legState).join('/')}`,
+  );
+  check(landed && !rr.crashed, 'recovery mission lands without crashing');
+  check(
+    chute.chuteState === 'deployed' || chute.mainFraction > 0.5,
+    'parachutes deployed before touchdown',
+  );
+  check(
+    rr.parts.filter((p) => p.def.category === 'legs').every((p) => p.legState !== 'stowed'),
+    'landing struts were deployed for touchdown',
+  );
+}
+
 // ------------------------------------------------------------ engine plate --
 console.log('== Procedural engine plate ==');
 {
@@ -559,4 +952,4 @@ if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED.`);
   process.exit(1);
 }
-console.log('\nSUCCESS: all Phase 5 simulation checks passed.');
+console.log('\nSUCCESS: all simulation checks passed.');

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "sim": "tsx scripts/simAscent.ts"
+    "sim": "tsx scripts/simAscent.ts",
+    "test:graph": "tsx scripts/testPartGraph.ts"
   },
   "dependencies": {
     "pixi.js": "^8.6.6"

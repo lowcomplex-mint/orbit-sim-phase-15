@@ -19,7 +19,12 @@ export const DEFAULT_ROCKET_DESIGN: RocketDesignData = {
       yCells: 2,
       custom: { widthCells: 2, heightCells: 4 },
     },
-    { defId: 'decoupler-1', xCells: -1, yCells: 6 },
+    {
+      defId: 'procedural-decoupler',
+      xCells: -1,
+      yCells: 6,
+      custom: { widthCells: 2, heightCells: 1 },
+    },
     { defId: 'engine-wisp', xCells: -1, yCells: 7 },
     {
       defId: 'procedural-fuel-tank',

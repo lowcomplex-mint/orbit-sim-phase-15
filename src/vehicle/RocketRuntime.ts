@@ -4,7 +4,7 @@ import { lerp } from '../math/Units';
 import { computeCenterOfMass } from './CenterOfMass';
 import type { PartDefinition } from './PartDefinition';
 import { PartInstance } from './PartInstance';
-import type { PartCustomization } from './ProceduralPart';
+import type { LegState, PartCustomization } from './ProceduralPart';
 import { CHUTE_CD } from './ProceduralPart';
 import { computeStagePlan, fireStage, partsAttached, type StagePlan } from './StageSystem';
 
@@ -36,6 +36,9 @@ export interface SerializedRuntime {
     chuteState?: string;
     drogueFraction?: number;
     mainFraction?: number;
+    /** Phase 8 leg state; optional for backward compatibility. */
+    legState?: LegState;
+    /** @deprecated Use legState. Kept for old saves. */
     legsDeployed?: boolean;
   }[];
   position: { x: number; y: number };
@@ -483,33 +486,36 @@ export class RocketRuntime {
     return this.parts.some((p) => p.def.category === 'clamp');
   }
 
-  /** Deployed legs sitting at the very bottom of the stack absorb landings. */
+  /** True when any landing leg is deployed (radial legs may sit on the flank). */
   get legsDeployedAtBottom(): boolean {
-    let minY = Infinity;
-    for (const p of this.parts) minY = Math.min(minY, p.yCells);
     return this.parts.some(
-      (p) => p.def.category === 'legs' && p.legsDeployed && p.yCells === minY,
+      (p) => p.def.category === 'legs' && p.legState === 'deployed',
     );
   }
 
-  /** Toggle all landing legs. Returns the new state, or null if no legs. */
-  toggleLegs(): boolean | null {
-    const legs = this.parts.filter((p) => p.def.category === 'legs');
+  /** Toggle all non-broken legs stowed ↔ deployed. Returns new state, or null. */
+  toggleLegs(): LegState | null {
+    const legs = this.parts.filter(
+      (p) => p.def.category === 'legs' && p.legState !== 'broken',
+    );
     if (legs.length === 0) return null;
-    const deploy = !legs.every((l) => l.legsDeployed);
-    for (const l of legs) l.legsDeployed = deploy;
-    this.revision++; // legs render differently when deployed
-    return deploy;
+    const deploy = !legs.every((l) => l.legState === 'deployed');
+    const next: LegState = deploy ? 'deployed' : 'stowed';
+    for (const l of legs) l.legState = next;
+    this.revision++;
+    return next;
   }
 
-  /** Break the bottom legs on a hard-but-survivable landing. */
+  /** Mark deployed legs broken on a hard-but-survivable landing. */
   breakBottomLegs(): string[] {
-    let minY = Infinity;
-    for (const p of this.parts) minY = Math.min(minY, p.yCells);
-    const broken = this.parts.filter(
-      (p) => p.def.category === 'legs' && p.yCells === minY,
-    );
-    if (broken.length > 0) this.destroyParts(broken);
+    const broken: PartInstance[] = [];
+    for (const p of this.parts) {
+      if (p.def.category === 'legs' && p.legState === 'deployed') {
+        p.legState = 'broken';
+        broken.push(p);
+      }
+    }
+    if (broken.length > 0) this.revision++;
     return broken.map((p) => p.def.name);
   }
 
@@ -669,7 +675,7 @@ export class RocketRuntime {
         chuteState: p.chute ? p.chuteState : undefined,
         drogueFraction: p.chute ? p.drogueFraction : undefined,
         mainFraction: p.chute ? p.mainFraction : undefined,
-        legsDeployed: p.def.category === 'legs' ? p.legsDeployed : undefined,
+        legState: p.def.category === 'legs' ? p.legState : undefined,
       })),
       position: { x: this.position.x, y: this.position.y },
       velocity: { x: this.velocity.x, y: this.velocity.y },
@@ -699,7 +705,11 @@ export class RocketRuntime {
         instance.drogueFraction = p.drogueFraction ?? 0;
         instance.mainFraction = p.mainFraction ?? 0;
       }
-      if (p.legsDeployed !== undefined) instance.legsDeployed = p.legsDeployed;
+      if (p.legState !== undefined) {
+        instance.legState = p.legState;
+      } else if (p.legsDeployed !== undefined) {
+        instance.legState = p.legsDeployed ? 'deployed' : 'stowed';
+      }
       return instance;
     });
     const runtime = new RocketRuntime(parts, data.stagesFired);

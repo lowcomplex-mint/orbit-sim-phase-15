@@ -1,23 +1,13 @@
 import { BUILDER, GRID_CELL_METERS } from '../config/constants';
 import type { Vec2 } from '../math/Vec2';
 import { nodesMatch } from '../vehicle/AttachmentNode';
+import { mountKindForNodes } from '../vehicle/PartGraph';
+import type { MountKind } from '../vehicle/PartGraph';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import { resolvePlacedPart, type ResolvedPartProps } from '../vehicle/ProceduralPart';
 import type { RocketDesign } from '../vehicle/RocketDesign';
+import { worldAttachmentNodes } from '../vehicle/PartTree';
 import { freePlacementOrigin, inBounds, overlapsAnyPart } from './GridSystem';
-
-/**
- * Snapping is attachment-driven: a dragged part may only land where one of
- * its nodes EXACTLY coincides with a compatible node of a placed part (both
- * are integer grid vertices, so alignment is exact by construction — there
- * is no floating-point "close enough" placement).
- *
- * The only exception: the first part of an empty design may be placed
- * anywhere in bounds.
- *
- * Procedural parts pass through unchanged: the caller resolves dimensions
- * and nodes once (DraggedPart.props) and placed parts are resolved here.
- */
 
 /** What the builder is currently dragging: definition + resolved geometry. */
 export interface DraggedPart {
@@ -29,8 +19,13 @@ export interface SnapResult {
   xCells: number;
   yCells: number;
   valid: boolean;
-  /** True when the position comes from an attachment node (not free placement). */
   attached: boolean;
+  /** Placed part id when snapping to an attachment (Phase 9 tree). */
+  parentId?: string | null;
+  /** Node indices for edge creation (Phase 11). */
+  parentNodeIndex?: number;
+  childNodeIndex?: number;
+  mountKind?: MountKind;
 }
 
 export function findSnap(
@@ -38,36 +33,52 @@ export function findSnap(
   catalog: Map<string, PartDefinition>,
   dragged: DraggedPart,
   pointerWorld: Vec2,
+  snapStep: number,
 ): SnapResult {
   const { widthCells, heightCells, attachmentNodes } = dragged.props;
-  const free = freePlacementOrigin(widthCells, heightCells, pointerWorld);
+  const free = freePlacementOrigin(widthCells, heightCells, pointerWorld, snapStep);
 
   if (design.isEmpty) {
     return {
       ...free,
       valid: inBounds(widthCells, heightCells, free.xCells, free.yCells),
       attached: false,
+      parentId: null,
     };
   }
 
   const cell = GRID_CELL_METERS;
   const snapRadiusSq = (BUILDER.snapRadiusCells * cell) ** 2;
-  let best: { xCells: number; yCells: number; distSq: number } | null = null;
+  let best: {
+    xCells: number;
+    yCells: number;
+    distSq: number;
+    parentId: string | null;
+    parentNodeIndex: number;
+    childNodeIndex: number;
+    mountKind: MountKind;
+  } | null = null;
 
   for (const placed of design.parts) {
     const resolved = resolvePlacedPart(placed, catalog);
     if (!resolved) continue;
-    for (const placedNode of resolved.props.attachmentNodes) {
-      const nodeX = placed.xCells + placedNode.xCells;
-      const nodeY = placed.yCells + placedNode.yCells;
-      for (const dragNode of attachmentNodes) {
+    const placedWorld = worldAttachmentNodes(
+      placed.xCells,
+      placed.yCells,
+      resolved.props.widthCells,
+      resolved.props.heightCells,
+      placed.rotationDeg ?? 0,
+      resolved.props.attachmentNodes,
+    );
+    for (let parentNodeIndex = 0; parentNodeIndex < placedWorld.length; parentNodeIndex++) {
+      const placedNode = placedWorld[parentNodeIndex];
+      for (let childNodeIndex = 0; childNodeIndex < attachmentNodes.length; childNodeIndex++) {
+        const dragNode = attachmentNodes[childNodeIndex];
         if (!nodesMatch(placedNode.kind, dragNode.kind)) continue;
 
-        // Candidate origin that makes the two nodes coincide exactly.
-        const xCells = nodeX - dragNode.xCells;
-        const yCells = nodeY - dragNode.yCells;
+        const xCells = placedNode.xCells - dragNode.xCells;
+        const yCells = placedNode.yCells - dragNode.yCells;
 
-        // Rank candidates by how close the part's center would be to the pointer.
         const centerX = (xCells + widthCells / 2) * cell;
         const centerY = (yCells + heightCells / 2) * cell;
         const distSq =
@@ -78,13 +89,32 @@ export function findSnap(
           continue;
         }
 
-        if (!best || distSq < best.distSq) best = { xCells, yCells, distSq };
+        if (!best || distSq < best.distSq) {
+          best = {
+            xCells,
+            yCells,
+            distSq,
+            parentId: placed.id ?? null,
+            parentNodeIndex,
+            childNodeIndex,
+            mountKind: mountKindForNodes(placedNode.kind, dragNode.kind),
+          };
+        }
       }
     }
   }
 
   if (best) {
-    return { xCells: best.xCells, yCells: best.yCells, valid: true, attached: true };
+    return {
+      xCells: best.xCells,
+      yCells: best.yCells,
+      valid: true,
+      attached: true,
+      parentId: best.parentId,
+      parentNodeIndex: best.parentNodeIndex,
+      childNodeIndex: best.childNodeIndex,
+      mountKind: best.mountKind,
+    };
   }
   return { ...free, valid: false, attached: false };
 }

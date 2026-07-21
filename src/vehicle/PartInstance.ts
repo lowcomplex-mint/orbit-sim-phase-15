@@ -1,11 +1,12 @@
 import { AMBIENT_TEMP_K, GRID_CELL_METERS } from '../config/constants';
-import type { WorldNode } from './AttachmentNode';
+import { rotateOffset, type WorldNode } from './AttachmentNode';
 import type { PartDefinition } from './PartDefinition';
 import {
   clampThrustLimiter,
   resolveChute,
   resolvePartProps,
   type ChuteState,
+  type LegState,
   type PartCustomization,
   type ResolvedChute,
 } from './ProceduralPart';
@@ -45,8 +46,8 @@ export class PartInstance {
   drogueFraction = 0;
   mainFraction = 0;
 
-  // --- Landing legs (category 'legs') -----------------------------------
-  legsDeployed: boolean;
+  // --- Landing legs (category 'legs'; flight-only, VAB always shows stowed) --
+  legState: LegState;
 
   /** Engine max-thrust fraction, 0.1..1 (context-menu thrust limiter). */
   readonly thrustLimiter: number;
@@ -57,11 +58,15 @@ export class PartInstance {
 
   fuel: number;
 
+  /** CCW rotation in degrees (design tree / Phase 9). */
+  readonly rotationDeg: number;
+
   constructor(
     readonly def: PartDefinition,
     public xCells: number,
     public yCells: number,
     custom?: PartCustomization,
+    rotationDeg = 0,
   ) {
     this.instanceId = nextInstanceId++;
     const props = resolvePartProps(def, custom);
@@ -79,7 +84,8 @@ export class PartInstance {
     this.custom = custom ? { ...custom } : undefined;
     this.fuel = this.fuelCapacityKg;
     this.chute = resolveChute(def, custom);
-    this.legsDeployed = def.category === 'legs'; // spawn with gear down
+    this.legState = 'stowed';
+    this.rotationDeg = rotationDeg;
   }
 
   get mass(): number {
@@ -95,10 +101,13 @@ export class PartInstance {
   }
 
   worldNodes(): WorldNode[] {
-    return this.nodes.map((n) => ({
-      xCells: this.xCells + n.xCells,
-      yCells: this.yCells + n.yCells,
-      kind: n.kind,
-    }));
+    return this.nodes.map((n) => {
+      const local = rotateOffset(n.xCells, n.yCells, this.widthCells, this.heightCells, this.rotationDeg);
+      return {
+        xCells: this.xCells + local.xCells,
+        yCells: this.yCells + local.yCells,
+        kind: n.kind,
+      };
+    });
   }
 }

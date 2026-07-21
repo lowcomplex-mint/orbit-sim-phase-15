@@ -1,4 +1,4 @@
-import { nodesMatch } from './AttachmentNode';
+import { cellsNear, nodesMatch } from './AttachmentNode';
 import type { PartInstance } from './PartInstance';
 
 /**
@@ -38,7 +38,11 @@ export interface StagePlan {
 export function partsAttached(a: PartInstance, b: PartInstance): boolean {
   for (const na of a.worldNodes()) {
     for (const nb of b.worldNodes()) {
-      if (na.xCells === nb.xCells && na.yCells === nb.yCells && nodesMatch(na.kind, nb.kind)) {
+      if (
+        cellsNear(na.xCells, nb.xCells) &&
+        cellsNear(na.yCells, nb.yCells) &&
+        nodesMatch(na.kind, nb.kind)
+      ) {
         return true;
       }
     }

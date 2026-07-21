@@ -10,6 +10,7 @@ export interface FlightControlCallbacks {
   onWarpStep(delta: number): void;
   onTogglePause(): void;
   onCycleSas(): void;
+  onToggleLegs(): void;
 }
 
 /**
@@ -18,7 +19,7 @@ export interface FlightControlCallbacks {
  * fire through callbacks.
  *
  * Keys: A/D rotate · W/S throttle · Z/X full/cut throttle · Space stage
- *       M map · R reset · ,/. time warp (L = log, handled globally).
+ *       M map · R reset · ,/. time warp · L toggle legs (flight only).
  */
 export class FlightControls {
   /** -1..1 rotation commanded by the on-screen hold buttons. */
@@ -85,6 +86,10 @@ export class FlightControls {
         break;
       case 'KeyG':
         this.callbacks.onCycleSas();
+        break;
+      case 'KeyL':
+        e.preventDefault();
+        this.callbacks.onToggleLegs();
         break;
       case 'Comma':
         this.callbacks.onWarpStep(-1);

@@ -85,6 +85,9 @@ export const CHUTE_CD = 1.5;
  */
 export type ChuteState = 'packed' | 'armed' | 'deployed' | 'cut' | 'failed';
 
+/** Flight-only landing-leg state (VAB always renders stowed). */
+export type LegState = 'stowed' | 'deployed' | 'broken';
+
 /** Fully resolved chute properties used by physics and analysis. */
 export interface ResolvedChute extends ChuteConfig {
   /** Main canopy area, m^2. */
@@ -180,6 +183,9 @@ function proceduralNodes(
   config: ProceduralPartConfig,
   dims: ProceduralDimensions,
 ): AttachmentNodeDef[] {
+  if (config.nodeLayout === 'stack') {
+    return stackNodes(dims.widthCells, dims.heightCells);
+  }
   if (config.nodeLayout === 'enginePlate') {
     // One top node + an engine mount every 2 cells: symmetric clusters.
     const nodes: AttachmentNodeDef[] = [

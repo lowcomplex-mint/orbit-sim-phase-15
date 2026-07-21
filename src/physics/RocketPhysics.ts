@@ -5,6 +5,15 @@ import { Vec2 } from '../math/Vec2';
 import { getDominantBody } from '../space/SphereOfInfluence';
 import type { RocketRuntime } from '../vehicle/RocketRuntime';
 import { airDensityAt, densityRatioAt } from './AtmosphereSystem';
+import {
+  applySurfaceNormalConstraint,
+  clampToSurface,
+  inwardRadialSpeedMS,
+  landingOnDeployedLegs,
+  minContactAltitudeM,
+  stickToSurface,
+  surfaceVelocityAt,
+} from './GroundContact';
 import { stepThermal } from './ThermalModel';
 import type { CelestialBody } from './CelestialBody';
 import type { GravitySystem } from './GravitySystem';
@@ -136,10 +145,24 @@ export function stepRocket(
   // --- Launch clamps: the vessel is bolted to the pad until they release
   // through staging. Engines may burn (fuel drains) but nothing moves. ---
   if (rocket.hasLaunchClamps) {
-    rocket.velocity = Vec2.ZERO;
-    rocket.angularVelocityRadS = 0;
+    stickToSurface(rocket, dominant, env.simTime);
     rocket.landed = true;
     return events;
+  }
+
+  // --- Resting on the surface with engines idle: stay fixed to the body.
+  // Old behaviour only cancelled the *inward* velocity component, so craft
+  // kept any tangential speed and skated around the planet (pad appeared to
+  // drift past; debris "flew away" while the active vessel stayed put in
+  // inertial space). Full stick matches surface velocity instead.
+  if (rocket.landed && rocket.throttle <= 0 && !rocket.crashed) {
+    const restAlt = minContactAltitudeM(rocket, bodyPos, dominant.radiusM);
+    if (restAlt <= 0.05) {
+      stickToSurface(rocket, dominant, env.simTime);
+      return events;
+    }
+    rocket.landed = false;
+    events.liftoff = true;
   }
 
   // --- Attitude: rate-command controller with physical torque limits, plus
@@ -149,7 +172,7 @@ export function stepRocket(
   // SAS modes: player input overrides; otherwise 'stability' damps,
   // prograde/retrograde chase the body-relative velocity direction, and
   // 'off' applies no control torque at all. ---
-  if (!rocket.landed) {
+  if (!rocket.landed || rocket.throttle > 0) {
     const inertia = rocket.momentOfInertiaKgM2;
     const maxTorque = rocket.reactionWheelNm + propulsion.gimbalAuthorityNm;
 
@@ -240,23 +263,30 @@ export function stepRocket(
   rocket.velocity = rocket.velocity.add(accel.scale(dt));
   rocket.position = rocket.position.add(rocket.velocity.scale(dt));
 
-  // --- Ground contact with the dominant body. Deployed landing legs at the
-  // bottom raise the crash tolerance; a hard-but-survivable hit breaks them.
-  const relNew = rocket.position.sub(bodyPos);
-  if (relNew.length() <= dominant.radiusM) {
-    const impactSpeed = rocket.velocity.sub(bodyVel).length();
-    rocket.position = bodyPos.add(relNew.normalized().scale(dominant.radiusM));
-    // A landed vessel rides with its body (Earth is static; the Moon isn't).
-    rocket.velocity = bodyVel;
-    rocket.angularVelocityRadS = 0;
+  // --- Ground contact: hull + deployed leg feet (see GroundContact.ts).
+  // Soft landings stick fully to the surface (static friction / rest).
+  // Hard landings crash but still stop skating. Thrusting craft only get a
+  // surface-normal constraint so they can lift off.
+  const minAlt = minContactAltitudeM(rocket, bodyPos, dominant.radiusM);
+  const onSurface = minAlt <= 0.02;
+  const surfaceVel = surfaceVelocityAt(dominant, rocket.position, env.simTime);
+
+  if (onSurface) {
+    const impactSpeed = !rocket.landed
+      ? inwardRadialSpeedMS(rocket, bodyPos, bodyVel)
+      : 0;
+
+    clampToSurface(rocket, bodyPos, dominant.radiusM);
+
     if (!rocket.landed) {
-      const hasLegs = rocket.legsDeployedAtBottom;
-      const tolerance = hasLegs ? LEGS_CRASH_SPEED : CRASH_SPEED;
+      const onLegs = landingOnDeployedLegs(rocket);
+      const tolerance = onLegs ? LEGS_CRASH_SPEED : CRASH_SPEED;
       if (impactSpeed > tolerance) {
         rocket.crashed = true;
         events.crashed = true;
+        stickToSurface(rocket, dominant, env.simTime);
       } else {
-        if (hasLegs && impactSpeed > CRASH_SPEED) {
+        if (onLegs && impactSpeed > CRASH_SPEED) {
           const broken = rocket.breakBottomLegs();
           if (broken.length > 0) {
             events.notices.push({
@@ -266,10 +296,16 @@ export function stepRocket(
           }
         }
         events.landed = true;
+        rocket.landed = true;
+        stickToSurface(rocket, dominant, env.simTime);
       }
-      rocket.landed = true;
+    } else if (rocket.throttle <= 0 || rocket.crashed) {
+      stickToSurface(rocket, dominant, env.simTime);
+    } else {
+      // Throttled up on the pad: non-penetration only (engines may lift off).
+      applySurfaceNormalConstraint(rocket, bodyPos, surfaceVel);
     }
-  } else if (rocket.landed && relNew.length() - dominant.radiusM > 0.05) {
+  } else if (rocket.landed && minAlt > 0.05) {
     rocket.landed = false;
     events.liftoff = true;
   }

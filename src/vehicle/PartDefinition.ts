@@ -50,10 +50,11 @@ export interface ProceduralPartConfig {
   /**
    * How attachment nodes are generated from the resolved size:
    *  - 'tank' (default): stack nodes + side flanks.
+   *  - 'stack': vertical stack nodes only (procedural decouplers).
    *  - 'enginePlate': one top node + an engine mount node every 2 cells of
    *    width — symmetric engine clusters.
    */
-  nodeLayout?: 'tank' | 'enginePlate';
+  nodeLayout?: 'tank' | 'stack' | 'enginePlate';
 }
 
 export interface PartDefinition {
@@ -131,16 +132,14 @@ export interface PartDefinition {
 
 /**
  * Standard stack nodes for a vertical part: one bottom node and one top node,
- * both on the part's center column. Requires an even widthCells so the center
- * lands on an integer grid vertex.
+ * both on the part's center column (fractional widths are valid since the
+ * VAB fractional grid — see builder/PlacementGrid.ts).
  */
 export function stackNodes(widthCells: number, heightCells: number): AttachmentNodeDef[] {
-  if (widthCells % 2 !== 0) {
-    throw new Error(`stackNodes needs an even widthCells, got ${widthCells}`);
-  }
+  const centerX = widthCells / 2;
   return [
-    { xCells: widthCells / 2, yCells: 0, kind: 'bottom' },
-    { xCells: widthCells / 2, yCells: heightCells, kind: 'top' },
+    { xCells: centerX, yCells: 0, kind: 'bottom' },
+    { xCells: centerX, yCells: heightCells, kind: 'top' },
   ];
 }
 

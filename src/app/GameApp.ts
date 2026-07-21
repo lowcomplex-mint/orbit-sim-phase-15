@@ -116,10 +116,10 @@ export class GameApp {
       ),
     };
 
-    // Global keys: log panel, quicksave/quickload, debug overlay.
+    // Global keys: log panel (not in flight — L toggles legs there), quicksave, debug.
     const debugOverlay = new DebugOverlay(uiRoot);
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyL' && !e.repeat) debugLog.toggle();
+      if (e.code === 'KeyL' && !e.repeat && app.currentId !== 'flight') debugLog.toggle();
       if (e.code === 'F3') {
         e.preventDefault();
         debugOverlay.toggle();

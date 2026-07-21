@@ -10,7 +10,8 @@ import { Vec2 } from '../math/Vec2';
  * exact and O(1) per frame regardless of the warp factor.
  *
  * Limitations (all enforced by the eligibility checks in FlightSession):
- *  - Elliptic orbits only (e < MAX_RAILS_ECCENTRICITY). TODO: hyperbolic
+ *  - Elliptic orbits only (e < MAX_RAILS_ECCENTRICITY), including suborbital
+ *    arcs — rails drops automatically on atmosphere entry. TODO: hyperbolic
  *    propagation via the universal variable formulation for escape warp.
  *  - Two-body around Earth only: the Moon's (negligible near-Earth) pull is
  *    ignored while on rails, so there is a tiny, documented discrepancy vs.
@@ -18,6 +19,11 @@ import { Vec2 } from '../math/Vec2';
  */
 
 export const MAX_RAILS_ECCENTRICITY = 0.95;
+
+/** True when Kepler rails propagation can represent this conic (bound, not near-parabolic). */
+export function canPropagateOnRails(info: { isBound: boolean; eccentricity: number }): boolean {
+  return info.isBound && info.eccentricity < MAX_RAILS_ECCENTRICITY;
+}
 
 export interface RailsOrbitState {
   mu: number;

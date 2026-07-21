@@ -3,13 +3,12 @@ import type { Vec2 } from '../math/Vec2';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import { resolvePlacedPart } from '../vehicle/ProceduralPart';
 import type { PlacedPartData, RocketDesign } from '../vehicle/RocketDesign';
+import { snapOrigin } from './PlacementGrid';
 
 /**
- * Pure integer-grid math for the builder. Nothing here touches rendering;
- * positions are grid cells (integers) or world meters (Vec2) only.
- *
- * All functions take explicit RESOLVED dimensions so procedural parts and
- * fixed parts go through the exact same code path.
+ * Builder grid math. Positions are in grid cells (fractional since Phase 7);
+ * world space uses meters via GRID_CELL_METERS. All functions take explicit
+ * RESOLVED dimensions so procedural and fixed parts share one code path.
  */
 
 export interface CellPos {
@@ -17,7 +16,7 @@ export interface CellPos {
   yCells: number;
 }
 
-/** The grid cell under a world-space point. */
+/** The grid cell under a world-space point (floor — used for legacy lookups). */
 export function worldToCell(world: Vec2): CellPos {
   return {
     xCells: Math.floor(world.x / GRID_CELL_METERS),
@@ -25,16 +24,24 @@ export function worldToCell(world: Vec2): CellPos {
   };
 }
 
-/** Grid origin for a part so that its bottom-center sits nearest the pointer. */
+/** World-space meters → fractional grid-cell coordinates. */
+export function worldToGrid(world: Vec2): CellPos {
+  return {
+    xCells: world.x / GRID_CELL_METERS,
+    yCells: world.y / GRID_CELL_METERS,
+  };
+}
+
+/** Grid origin for a part so that its center sits nearest the pointer, snapped. */
 export function freePlacementOrigin(
   widthCells: number,
   heightCells: number,
   pointerWorld: Vec2,
+  snapStep: number,
 ): CellPos {
-  return {
-    xCells: Math.round(pointerWorld.x / GRID_CELL_METERS - widthCells / 2),
-    yCells: Math.round(pointerWorld.y / GRID_CELL_METERS - heightCells / 2),
-  };
+  const rawX = pointerWorld.x / GRID_CELL_METERS - widthCells / 2;
+  const rawY = pointerWorld.y / GRID_CELL_METERS - heightCells / 2;
+  return snapOrigin(rawX, rawY, snapStep);
 }
 
 export function inBounds(

@@ -9,7 +9,7 @@ export const PHYSICS_DT = 1 / 60;
 /** Standard gravity, used to convert Isp (s) to exhaust velocity / mass flow. */
 export const G0 = 9.81;
 
-/** Builder grid cell size in meters. All part sizes are integer multiples of this. */
+/** Builder grid cell size in meters. Part sizes and placements are multiples of this × snap step. */
 export const GRID_CELL_METERS = 0.5;
 
 /**

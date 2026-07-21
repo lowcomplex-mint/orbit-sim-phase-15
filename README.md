@@ -34,8 +34,8 @@ npm run sim      # headless deterministic regression suite (no browser)
 
 `npm run sim` is the fastest way to confirm the physics/systems layer is
 healthy after a change — it drives a real `FlightSession` in Node and checks
-ascent, staging, warp, saves, reentry heating, SAS, career, and Moon-relative
-rails warp.
+ascent, staging, warp, saves, reentry heating, SAS, career, Moon-relative
+rails warp, and landing-strut touchdown (deploy/stow/break gates).
 
 ## Controls
 
@@ -43,14 +43,15 @@ rails warp.
 | --- | --- |
 | Drag from palette / placed part | Place / move (exact node snapping) |
 | Drag empty space · wheel / pinch | Pan / zoom the editor camera |
-| `Ctrl+Z` / `Ctrl+Y` | Undo / redo (SYM button toggles mirror symmetry) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| SYM button | Mirror placement across the center column (use for landing-strut pairs) |
 | Right-click a placed part | Context menu: thrust limiter, ignition stage, tank size, nose/chute config |
 | STAGING panel (hover/tap a stage) | Highlights that stage's parts |
 | Throttle slider / `W` `S` / `Z` `X` | Throttle / full / cut |
 | `A` / `D` or ⟲ ⟳ | Rotate — rate command, torque-limited by wheels + gimbal |
 | `G` / SAS button | Cycle SAS: stability / prograde / retrograde / off |
 | `Space` / STAGE | Fire next stage (spent stage becomes a persistent vessel) |
-| 🪂 / LEGS buttons | Arm parachutes / toggle landing legs |
+| 🪂 / LEGS / `L` | Arm parachutes / deploy or stow all landing struts (`L` in flight only) |
 | `M` / MAP | Map view (pan by dragging, pinch/wheel zoom, FOLLOW/CENTER, Ap/Pe markers) |
 | `,` / `.` or ◄◄ ►► | Time warp: 1–4x physics, 10–1000x rails (stable orbit only, Earth or Moon) |
 | `Esc` / ⏸ | Pause menu (resume, reverts, scene exits, quicksave/-load) |
@@ -101,6 +102,23 @@ Ground rules baked into the code (do not violate when continuing):
 - **All editor mutations funnel through `BuilderScene.designChanged()`** so
   undo/redo, analysis, and the CoM marker never go stale.
 
+## Landing struts (VAB + flight)
+
+Each **Landing Strut** part (`legs-1`) is a single LT-2-style radial leg — not a
+whole gear set. Mount one or more on tank flanks (left/right attachment nodes);
+use **SYM** to place mirrored pairs on the center column.
+
+- **Stowed** (default in the VAB and at spawn): strut folded upward along the hull.
+- **Deployed** (`LEGS` / `L`): hinges outward, hydraulic extension, foot pad;
+  the craft **sits on the feet** (ground contact uses foot positions, not just a
+  crash-speed buff). Throttle up to lift off again.
+- **Broken**: hard-but-survivable touchdown with legs deployed; struts stay on
+  the craft but no longer support or cushion.
+
+Deployed legs raise impact tolerance (12 → 20 m/s hull vs. foot contact).
+Stowed or broken legs use hull tolerance only. Geometry is shared between art
+and physics in `src/vehicle/LandingLegs.ts`.
+
 ## Known limitations / caveats
 
 - Save data lives in browser `localStorage`; it is per-browser and not synced.
@@ -116,6 +134,7 @@ Ground rules baked into the code (do not violate when continuing):
 ## Current status & next steps
 
 The launch → orbit → Moon → reenter → land loop works, including procedural
-parachutes, functional landing legs, launch clamps, electricity, and
-Moon-relative rails warp. See [CURRENT_STATUS.md](CURRENT_STATUS.md) for the
-full done/partial/stubbed breakdown and the recommended next development phase.
+parachutes, LT-2-style landing struts with foot contact, launch clamps,
+electricity, and Moon-relative rails warp. See [CURRENT_STATUS.md](CURRENT_STATUS.md)
+for the full done/partial/stubbed breakdown and the recommended next development
+phase.

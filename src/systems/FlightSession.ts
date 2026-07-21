@@ -1,11 +1,11 @@
 import type { LogLevel } from '../app/EventBus';
 import { instantiateParts } from '../builder/RocketAssembler';
-import { classifyOrbit, computeOrbitInfo } from '../math/OrbitMath';
+import { computeOrbitInfo } from '../math/OrbitMath';
 import { Vec2 } from '../math/Vec2';
 import { atmosphereHeightM } from '../physics/AtmosphereSystem';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import type { StepEvents } from '../physics/RocketPhysics';
-import { MAX_RAILS_ECCENTRICITY } from '../space/KeplerOrbit';
+import { canPropagateOnRails } from '../space/KeplerOrbit';
 import { getDominantBody } from '../space/SphereOfInfluence';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import type { RocketDesign } from '../vehicle/RocketDesign';
@@ -160,6 +160,11 @@ export class FlightSession {
       this.warp.dropToRealTime();
       this.log('info', 'Sphere-of-influence transition — rails warp disengaged.');
     }
+    if (events.railsAtmosphereBreak) {
+      this.world.disengageRails();
+      this.warp.dropToRealTime();
+      this.log('info', 'Entered the atmosphere — rails warp disengaged.');
+    }
 
     if (events.crashed && this.warp.dropToRealTime()) {
       this.log('info', 'Time warp reset (vessel crashed).');
@@ -236,8 +241,9 @@ export class FlightSession {
   }
 
   /**
-   * Can the active vessel go on rails right now? Fully SOI-aware: a stable
-   * orbit around WHICHEVER body dominates (Earth or Moon) qualifies.
+   * Can the active vessel go on rails right now? SOI-aware: any bound elliptic
+   * arc qualifies while outside the dominant body's atmosphere (suborbital
+   * return paths included — rails auto-drops on atmosphere entry).
    */
   checkRailsEligibility(): RailsEligibility {
     const rt = this.activeRuntime;
@@ -257,16 +263,13 @@ export class FlightSession {
     }
 
     const info = computeOrbitInfo(relPos, relVel, dominant.mu);
-    const status = classifyOrbit(info, dominant.radiusM, atmHeight, false, false);
-    if (status !== 'orbiting') {
+    if (!info.isBound) {
       return {
         ok: false,
-        reason:
-          `the trajectory around the ${dominant.name} is ${status} — ` +
-          'a stable orbit is required',
+        reason: 'the trajectory is escape — hyperbolic rails propagation is TODO',
       };
     }
-    if (info.eccentricity >= MAX_RAILS_ECCENTRICITY) {
+    if (!canPropagateOnRails(info)) {
       return {
         ok: false,
         reason: 'the orbit is too eccentric (near-parabolic rails propagation is TODO)',

@@ -108,6 +108,7 @@ export class FlightScene implements Scene {
       onWarpStep: (delta) => this.session.stepWarp(delta),
       onTogglePause: () => this.togglePause(),
       onCycleSas: () => this.cycleSas(),
+      onToggleLegs: () => this.toggleLegs(),
     });
     this.controls.onThrottleChanged = (t) => {
       this.throttleSlider.value = String(Math.round(t * 100));
@@ -230,6 +231,16 @@ export class FlightScene implements Scene {
     rocket.sasMode = next;
     this.refreshSasButton();
     this.ctx.log('info', `SAS: ${next}.`);
+  }
+
+  private toggleLegs(): void {
+    const state = this.session.activeRuntime.toggleLegs();
+    this.ctx.log(
+      state === null ? 'warn' : 'info',
+      state === null
+        ? 'No landing legs aboard.'
+        : `Landing legs ${state}.`,
+    );
   }
 
   private refreshSasButton(): void {
@@ -503,19 +514,7 @@ export class FlightScene implements Scene {
         },
         { title: 'Arm parachutes (deploy below their safe altitude)' },
       ),
-      createButton(
-        'LEGS',
-        () => {
-          const state = this.session.activeRuntime.toggleLegs();
-          this.ctx.log(
-            state === null ? 'warn' : 'info',
-            state === null
-              ? 'No landing legs aboard.'
-              : `Landing legs ${state ? 'deployed' : 'retracted'}.`,
-          );
-        },
-        { title: 'Toggle landing legs' },
-      ),
+      createButton('LEGS', () => this.toggleLegs(), { title: 'Toggle landing legs (L)' }),
       createButton('⏸', () => this.togglePause(), { title: 'Pause menu (Esc)' }),
     );
 

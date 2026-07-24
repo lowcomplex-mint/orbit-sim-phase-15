@@ -54,15 +54,15 @@ export class RotateControls {
     this.root.remove();
   }
 
-  /** Grey out rotation controls (Phase 11: disabled until Rotate v2). */
+  /** Enable/disable rotation step controls. */
   setEnabled(enabled: boolean): void {
     this.root.classList.toggle('disabled', !enabled);
     for (const el of this.root.querySelectorAll('button, select')) {
       (el as HTMLButtonElement).disabled = !enabled;
     }
     this.root.title = enabled
-      ? 'Subtree rotation increment (degrees)'
-      : 'Disabled until Phase 13 (node overhaul)';
+      ? 'Rotation step for radial mounts (stack mounts always use 90°)'
+      : 'Rotation step disabled';
   }
 
   get rotateStep(): RotateStepDeg {

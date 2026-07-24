@@ -9,13 +9,12 @@ import { tryTranslateSubtree } from '../src/builder/TransformTool';
 import {
   buildEdgesFromGeometry,
   deriveTreeFromEdges,
-  findMirroredPart,
-  mirroredParentId,
   mirroredXCells,
   mountKindForNodes,
   syncDesignGraph,
   validateStructure,
 } from '../src/vehicle/PartGraph';
+import { findMirroredPart, mirroredParentId } from '../src/builder/Symmetry';
 import { rerootDesign } from '../src/vehicle/PartTree';
 import { RocketDesign } from '../src/vehicle/RocketDesign';
 

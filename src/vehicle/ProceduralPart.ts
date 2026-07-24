@@ -33,6 +33,11 @@ export interface PartCustomization {
   variant?: string;
   /** Procedural parachute configuration (category 'parachute' only). */
   chute?: ChuteConfig;
+  /**
+   * Launch-clamp umbilical reach in cells (horizontal arm). Tower height uses
+   * heightCells. Both optional — defaults from the clamp definition.
+   */
+  clampUmbilicalCells?: number;
 }
 
 // ----------------------------------------------------------- parachutes --
@@ -223,6 +228,33 @@ export function resolvePartProps(
     const chuteArea = chute ? Math.max(chute.canopyAreaM2, chute.drogueAreaM2) : 0;
     const chuteMass = chuteMaterial ? 20 + chuteArea * 0.55 * chuteMaterial.massFactor : 0;
     const chuteCost = chuteMaterial ? 100 + chuteArea * 8 * chuteMaterial.costFactor : 0;
+
+    // Launch clamp: adjustable tower height + umbilical length (KSP-style).
+    if (def.category === 'clamp') {
+      const heightCells = Math.min(
+        12,
+        Math.max(2, Math.round(custom?.heightCells ?? def.heightCells)),
+      );
+      const umbilical = Math.min(
+        8,
+        Math.max(1, Math.round(custom?.clampUmbilicalCells ?? def.widthCells)),
+      );
+      const midY = Math.max(1, heightCells - 1);
+      return {
+        widthCells: umbilical,
+        heightCells,
+        dryMassKg: def.dryMass * (0.55 + 0.08 * heightCells + 0.06 * umbilical),
+        fuelCapacityKg: 0,
+        frontalAreaM2: def.frontalArea,
+        dragCoefficient: def.dragCoefficient,
+        costFunds: (def.cost ?? 0) + heightCells * 20 + umbilical * 15,
+        maxTempK: baseMaxTemp,
+        attachmentNodes: [
+          { xCells: 0, yCells: midY, kind: 'left' },
+          { xCells: umbilical, yCells: midY, kind: 'right' },
+        ],
+      };
+    }
 
     return {
       widthCells: def.widthCells,

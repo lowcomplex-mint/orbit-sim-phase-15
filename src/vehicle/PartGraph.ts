@@ -17,6 +17,11 @@ import type { PlacedPartData, RocketDesign } from './RocketDesign';
 import { ensurePartIds, pickRootHeuristic, worldAttachmentNodes } from './PartTree';
 import { partsAttached } from './StageSystem';
 import { PartInstance } from './PartInstance';
+import {
+  boxesSurfaceFlush,
+  canSurfaceAttach,
+  canSurfaceHost,
+} from './SurfaceAttach';
 
 /** How two parts are joined at a specific node pair. */
 export type MountKind = 'stack' | 'radial' | 'internal';
@@ -126,6 +131,62 @@ export function buildEdgesFromGeometry(
       }
     }
   }
+
+  // Surface-attach parts with no node mate yet: one radial edge to the best
+  // flush host (largest lateral contact). Skip if a node edge already binds
+  // the part (avoids legs also graphing onto a capsule they merely brush).
+  for (const surf of design.parts) {
+    if (!surf.id) continue;
+    const sResolved = resolvePlacedPart(surf, catalog);
+    if (!sResolved || !canSurfaceAttach(sResolved.def)) continue;
+    const alreadyBound = edges.some(
+      (e) => e.partAId === surf.id || e.partBId === surf.id,
+    );
+    if (alreadyBound) continue;
+    const sBox = {
+      x: surf.xCells,
+      y: surf.yCells,
+      w: sResolved.props.widthCells,
+      h: sResolved.props.heightCells,
+    };
+    let best: { id: string; score: number } | null = null;
+    for (const host of design.parts) {
+      if (!host.id || host === surf) continue;
+      const hResolved = resolvePlacedPart(host, catalog);
+      if (!hResolved || !canSurfaceHost(hResolved.def)) continue;
+      const hBox = {
+        x: host.xCells,
+        y: host.yCells,
+        w: hResolved.props.widthCells,
+        h: hResolved.props.heightCells,
+      };
+      if (!boxesSurfaceFlush(sBox, hBox)) continue;
+      const yOverlap = Math.max(
+        0,
+        Math.min(sBox.y + sBox.h, hBox.y + hBox.h) - Math.max(sBox.y, hBox.y),
+      );
+      const xOverlap = Math.max(
+        0,
+        Math.min(sBox.x + sBox.w, hBox.x + hBox.w) - Math.max(sBox.x, hBox.x),
+      );
+      const score = yOverlap * 10 + xOverlap; // prefer tall side contact
+      if (!best || score > best.score) best = { id: host.id, score };
+    }
+    if (best) {
+      const key = `${[surf.id, best.id].sort().join(':')}:surface`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        edges.push({
+          partAId: surf.id,
+          partBId: best.id,
+          mountKind: 'radial',
+          partANodeIndex: 0,
+          partBNodeIndex: 0,
+        });
+      }
+    }
+  }
+
   return edges;
 }
 
@@ -211,22 +272,17 @@ export function removeEdgesForPart(edges: AttachmentEdge[], partId: string): Att
   return edges.filter((e) => e.partAId !== partId && e.partBId !== partId);
 }
 
-/** Reset non-zero rotations authored under pre-Phase-11 semantics. */
-export function migrateRotationSemantics(design: RocketDesign): boolean {
-  let changed = false;
-  for (const p of design.parts) {
-    const rot = p.rotationDeg ?? 0;
-    if (rot !== 0) {
-      p.rotationDeg = 0;
-      changed = true;
-    }
-  }
-  return changed;
+/**
+ * Phase 11 once wiped non-zero rotationDeg every sync (pre-Rotate-v2
+ * semantics). Phase 13 keeps intentional rotations; this is a no-op kept so
+ * older call sites compile and docs can mention the migration history.
+ */
+export function migrateRotationSemantics(_design: RocketDesign): boolean {
+  return false;
 }
 
 /**
- * Full graph sync: ids, rotation migration, edges from geometry if missing,
- * derive tree, optional root heuristic on empty root.
+ * Full graph sync: ids, edges from geometry, derive tree, root repair.
  */
 export function syncDesignGraph(
   design: RocketDesign,
@@ -239,7 +295,6 @@ export function syncDesignGraph(
     return;
   }
   ensurePartIds(design);
-  migrateRotationSemantics(design);
 
   if (!design.rootPartId || !design.parts.some((part) => part.id === design.rootPartId)) {
     // Preserve an explicitly oriented surviving component when the previous
@@ -258,42 +313,9 @@ export function syncDesignGraph(
   void instances;
 }
 
-/** Mirror X for symmetry across the center column (matches BuilderScene). */
+/** Mirror X for symmetry across the center column (see builder/Symmetry.ts). */
 export function mirroredXCells(xCells: number, widthCells: number): number {
   return -(xCells + widthCells);
-}
-
-/** Find the geometric mirror twin of a placed part, if any. */
-export function findMirroredPart(
-  design: RocketDesign,
-  catalog: Map<string, PartDefinition>,
-  part: PlacedPartData,
-): PlacedPartData | null {
-  const resolved = resolvePlacedPart(part, catalog);
-  if (!resolved) return null;
-  const mx = mirroredXCells(part.xCells, resolved.props.widthCells);
-  return (
-    design.parts.find(
-      (p) =>
-        p !== part &&
-        p.defId === part.defId &&
-        p.yCells === part.yCells &&
-        p.xCells === mx,
-    ) ?? null
-  );
-}
-
-/** Resolve mirror parent id when placing a symmetry twin. */
-export function mirroredParentId(
-  design: RocketDesign,
-  catalog: Map<string, PartDefinition>,
-  parentId: string | null | undefined,
-): string | null {
-  if (!parentId) return null;
-  const parent = design.parts.find((p) => p.id === parentId);
-  if (!parent) return null;
-  const twin = findMirroredPart(design, catalog, parent);
-  return twin?.id ?? parentId;
 }
 
 export function validateStructure(

@@ -142,8 +142,9 @@ export function stepRocket(
     });
   }
 
-  // --- Launch clamps: the vessel is bolted to the pad until they release
-  // through staging. Engines may burn (fuel drains) but nothing moves. ---
+  // --- Launch clamps (KSP-cheaty): infinite holding strength. Engines may
+  // burn (fuel drains) but the vessel cannot translate or tip until clamps
+  // stage away. Mass / TWR is ignored. ---
   if (rocket.hasLaunchClamps) {
     stickToSurface(rocket, dominant, env.simTime);
     rocket.landed = true;

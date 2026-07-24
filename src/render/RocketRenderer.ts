@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
 import { GRID_CELL_METERS } from '../config/constants';
-import { legPose, poseInPartLocal } from '../vehicle/LandingLegs';
+import { legPose, poseInPartLocal, stackCoreCenterXCells } from '../vehicle/LandingLegs';
 import type { LegState } from '../vehicle/ProceduralPart';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import type { PartInstance } from '../vehicle/PartInstance';
@@ -134,6 +134,18 @@ export function buildPartGraphic(
         g.rect(w * 0.62, h * 0.22, w * 0.22, h * 0.56).fill(0x9ed4b6);
       }
       break;
+    case 'clamp': {
+      // Tower base + vertical post + horizontal umbilical (width = reach).
+      const postW = Math.min(w * 0.35, 0.22);
+      const armH = Math.min(h * 0.18, 0.2);
+      const armY = h * 0.72;
+      g.rect(0, 0, w, h * 0.12).fill(0x3a424c).stroke(outline);
+      g.rect((w - postW) / 2, 0, postW, h).fill(def.color).stroke(outline);
+      g.rect(0, armY, w, armH).fill(0x7a8694).stroke(outline);
+      g.circle(0, armY + armH / 2, armH * 0.45).fill(0xc4a35a);
+      g.circle(w, armY + armH / 2, armH * 0.45).fill(0xc4a35a);
+      break;
+    }
     default:
       g.rect(0, 0, w, h).fill(def.color).stroke(outline);
       break;
@@ -154,6 +166,8 @@ export function computeStackOrigin(parts: PartInstance[]): StackOrigin {
   for (const p of parts) {
     if (p.yCells < bottom.yCells) bottom = p;
   }
+  // Geometric base for rocket.position is still the lowest part; core column
+  // for leg outward signs is computed separately in buildStackDisplay.
   return {
     xCells: bottom.xCells + bottom.widthCells / 2,
     yCells: bottom.yCells,
@@ -168,6 +182,13 @@ export function buildStackDisplay(parts: PartInstance[], origin: StackOrigin): C
   const cell = GRID_CELL_METERS;
   const baseXM = origin.xCells * cell;
   const baseYM = origin.yCells * cell;
+  const coreCenterX = stackCoreCenterXCells(
+    parts.map((p) => ({
+      xCells: p.xCells,
+      widthCells: p.widthCells,
+      category: p.def.category,
+    })),
+  );
   const container = new Container();
   for (const part of parts) {
     const w = part.widthCells * cell;
@@ -175,7 +196,7 @@ export function buildStackDisplay(parts: PartInstance[], origin: StackOrigin): C
     const legPosePart =
       part.def.category === 'legs'
         ? poseInPartLocal(
-            legPose(part, part.legState, baseXM, baseYM, origin.xCells),
+            legPose(part, part.legState, baseXM, baseYM, coreCenterX),
             part,
             baseXM,
             baseYM,

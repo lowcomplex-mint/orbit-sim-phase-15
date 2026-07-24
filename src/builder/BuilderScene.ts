@@ -13,7 +13,7 @@ import { buildPartGraphic } from '../render/RocketRenderer';
 import { analyzeVehicle } from '../systems/VehicleAnalysis';
 import { createButton, createRow } from '../ui/Buttons';
 import type { PartDefinition } from '../vehicle/PartDefinition';
-import { legPose, poseInPartLocal } from '../vehicle/LandingLegs';
+import { legPose, poseInPartLocal, stackCoreCenterXCells } from '../vehicle/LandingLegs';
 import { PartInstance } from '../vehicle/PartInstance';
 import {
   clampProceduralDimensions,
@@ -46,8 +46,15 @@ import { SnapControls } from './SnapControls';
 import { findSnap, type DraggedPart, type SnapResult } from './SnapSystem';
 import { StagingPanel } from './StagingPanel';
 import { tryRotateSubtree, tryTranslateSubtree } from './TransformTool';
-import { mirroredParentId } from '../vehicle/PartGraph';
+import {
+  addToSubassemblyLibrary,
+  extractSubassembly,
+  loadSubassemblyLibrary,
+  placeSubassemblyAuto,
+  removeFromSubassemblyLibrary,
+} from './Subassembly';
 import { rerootDesign, subtreeParts } from '../vehicle/PartTree';
+import { computeSymmetryTwin, findMirroredPart } from './Symmetry';
 
 interface DragState extends DraggedPart {
   custom?: PartCustomization;
@@ -262,9 +269,9 @@ export class BuilderScene implements Scene {
       this.ctx.log('info', `Placement snap: ${formatSnapStep(step)}.`);
     });
     this.rotateControls = new RotateControls(toolbar, (step) => {
-      this.ctx.log('info', `Rotation step: ${step}°.`);
+      this.ctx.log('info', `Rotation step: ${step}° (stack mounts always quantize to 90°).`);
     });
-    this.rotateControls.setEnabled(false);
+    this.rotateControls.setEnabled(true);
     const toolRow = createRow('toolbar-tools');
     this.toolBtns = {
       place: createButton('Place', () => this.setTool('place'), { title: 'Place parts (default)' }),
@@ -273,18 +280,28 @@ export class BuilderScene implements Scene {
       }),
       transform: createButton('Move', () => this.setTool('transform'), { title: 'Move part + subtree' }),
       rotate: createButton('Rotate', () => this.setTool('rotate'), {
-        title: 'Rotate v2 is deferred to Phase 13; see the pivot-rules plan',
+        title: 'Rotate subtree about mount joint (Q/E · ↺/↻)',
       }),
       reroot: createButton('Root', () => this.setTool('reroot'), { title: 'Set tree root part' }),
     };
-    this.toolBtns.rotate.disabled = true;
-    this.toolBtns.rotate.classList.add('disabled');
     toolRow.append(
       this.toolBtns.place,
       this.toolBtns.select,
       this.toolBtns.transform,
       this.toolBtns.rotate,
       this.toolBtns.reroot,
+      createButton('↺', () => this.applyRotation(-this.rotateControls.rotateStep), {
+        title: 'Rotate CCW (Q)',
+      }),
+      createButton('↻', () => this.applyRotation(this.rotateControls.rotateStep), {
+        title: 'Rotate CW (E)',
+      }),
+      createButton('SUB+', () => this.saveSelectionAsSubassembly(), {
+        title: 'Save selection as subassembly',
+      }),
+      createButton('SUB…', () => this.placeSubassemblyFromLibrary(), {
+        title: 'Place a saved subassembly',
+      }),
     );
     toolbar.append(
       createButton('Clear', () => this.clearDesign()),
@@ -311,6 +328,10 @@ export class BuilderScene implements Scene {
       createButton('DEL', () => this.deleteSelection(), {
         className: 'small danger',
         title: 'Delete selection (Delete)',
+      }),
+      createButton('SUB', () => this.saveSelectionAsSubassembly(), {
+        className: 'small',
+        title: 'Save selection as subassembly',
       }),
       createButton(
         '✕',
@@ -346,31 +367,47 @@ export class BuilderScene implements Scene {
     this.contextMenu = new PartContextMenu(this.uiRoot, {
       onCustomize: (placed, patch) => this.customizePart(placed, patch),
       onRemove: (placed) => {
-        this.ctx.design.removePart(placed);
+        const twinRemoved = this.removePartAndSymmetryTwin(placed);
         this.designChanged();
-        this.ctx.log('info', 'Part removed.');
+        this.ctx.log(
+          'info',
+          twinRemoved ? 'Part and its symmetry twin removed.' : 'Part removed.',
+        );
       },
       onClosed: () => this.highlightStage(null),
     });
   }
 
-  private setTool(mode: BuilderTool): void {
-    if (mode === 'rotate') {
-      this.ctx.log('info', 'Rotate is disabled until Phase 13 (see phase-11-pivot-rules.md).');
-      return;
+  /**
+   * Remove a part and, if present, its geometric SYM twin (same def, mirrored
+   * footprint). Used on pick-up and delete so moving one side of a pair does
+   * not leave an orphaned mirror behind.
+   * @returns true when a twin was also removed
+   */
+  private removePartAndSymmetryTwin(placed: PlacedPartData): boolean {
+    const twin = findMirroredPart(this.ctx.design, this.ctx.catalog, placed);
+    this.ctx.design.removePart(placed);
+    if (twin && this.ctx.design.parts.includes(twin)) {
+      this.ctx.design.removePart(twin);
+      return true;
     }
+    return false;
+  }
+
+  private setTool(mode: BuilderTool): void {
     this.toolMode = mode;
     this.transformDrag = null;
     this.ghostG.clear();
-    if (mode !== 'transform') this.selectedPartId = null;
+    if (mode !== 'transform' && mode !== 'rotate') this.selectedPartId = null;
     for (const [key, btn] of Object.entries(this.toolBtns ?? {})) {
       btn.classList.toggle('active', key === mode);
     }
     const hints: Record<BuilderTool, string> = {
       place: 'Drag parts to build · right-click configures · Snap for fine placement · pan/zoom empty space.',
-      select: 'Drag a box over parts · click toggles · switch to Move and drag a selected part.',
+      select: 'Drag a box over parts · click toggles · switch to Move and drag a selected part · SUB saves subassembly.',
       transform: 'Click a part and drag to move it with its subtree · respects Snap step.',
-      rotate: 'Click a part to select · ↺/↻ or Q/E rotate the subtree · adjust Rot step.',
+      rotate:
+        'Click a part · ↺/↻ or Q/E rotate about its mount joint · stack snaps to 90° · radial uses Rot step.',
       reroot: 'Click a part to make it the tree root · staging order is unchanged.',
     };
     this.hintEl.textContent = hints[mode];
@@ -382,12 +419,95 @@ export class BuilderScene implements Scene {
       this.ctx.log('info', 'Select a part first (Rotate tool).');
       return;
     }
-    if (tryRotateSubtree(this.ctx.design, this.ctx.catalog, this.selectedPartId, deltaDeg)) {
+    if (
+      tryRotateSubtree(
+        this.ctx.design,
+        this.ctx.catalog,
+        this.selectedPartId,
+        deltaDeg,
+        this.rotateControls.rotateStep,
+      )
+    ) {
       this.designChanged();
-      this.ctx.log('info', `Rotated ${deltaDeg > 0 ? '+' : ''}${deltaDeg}°.`);
+      this.ctx.log('info', `Rotated subtree (${deltaDeg > 0 ? '+' : ''}${deltaDeg}° requested).`);
     } else {
-      this.ctx.log('warn', 'Rotation rejected: parts would overlap or leave the grid.');
+      this.ctx.log('warn', 'Rotation rejected: overlap, out of bounds, or joint would break.');
     }
+  }
+
+  private saveSelectionAsSubassembly(): void {
+    const ids =
+      this.selectedPartIds.size > 0
+        ? [...this.selectedPartIds]
+        : this.selectedPartId
+          ? [this.selectedPartId]
+          : [];
+    if (ids.length === 0) {
+      this.ctx.log('info', 'Select parts first (Select tool or Rotate selection).');
+      return;
+    }
+    const name =
+      typeof window !== 'undefined'
+        ? window.prompt('Subassembly name', 'My Subassembly')
+        : 'My Subassembly';
+    if (name === null) return;
+    const data = extractSubassembly(this.ctx.design, this.ctx.catalog, ids, name);
+    if (!data) {
+      this.ctx.log('warn', 'Could not extract subassembly from selection.');
+      return;
+    }
+    if (addToSubassemblyLibrary(data)) {
+      this.ctx.log(
+        'info',
+        `Saved subassembly "${data.name}" (${data.parts.length} part(s)). Use SUB… to place.`,
+      );
+    } else {
+      this.ctx.log('error', 'Could not save subassembly (storage unavailable).');
+    }
+  }
+
+  private placeSubassemblyFromLibrary(): void {
+    const list = loadSubassemblyLibrary();
+    if (list.length === 0) {
+      this.ctx.log('info', 'No saved subassemblies. Select parts and use SUB+ / SUB to save.');
+      return;
+    }
+    const lines = list.map((s, i) => `${i + 1}. ${s.name} (${s.parts.length} parts)`).join('\n');
+    const answer =
+      typeof window !== 'undefined'
+        ? window.prompt(`Place which subassembly?\n${lines}\n\nEnter number (or -N to delete):`, '1')
+        : '1';
+    if (answer === null) return;
+    const n = Number.parseInt(answer.trim(), 10);
+    if (!Number.isFinite(n) || n === 0) {
+      this.ctx.log('warn', 'Invalid subassembly choice.');
+      return;
+    }
+    if (n < 0) {
+      const idx = -n - 1;
+      if (removeFromSubassemblyLibrary(idx)) {
+        this.ctx.log('info', 'Subassembly removed from library.');
+      } else {
+        this.ctx.log('warn', 'Could not remove subassembly.');
+      }
+      return;
+    }
+    const data = list[n - 1];
+    if (!data) {
+      this.ctx.log('warn', 'No subassembly at that number.');
+      return;
+    }
+    const placed = placeSubassemblyAuto(this.ctx.design, this.ctx.catalog, data);
+    if (!placed) {
+      this.ctx.log('warn', 'No free space to place subassembly.');
+      return;
+    }
+    this.selectedPartIds = new Set(placed.map((p) => p.id!).filter(Boolean));
+    this.designChanged();
+    this.ctx.log(
+      'info',
+      `Placed "${data.name}" (${placed.length} parts) — snap onto the craft to attach.`,
+    );
   }
 
   private clearDesign(): void {
@@ -452,6 +572,40 @@ export class BuilderScene implements Scene {
         heightCells: patch.heightCells ?? placed.custom?.heightCells ?? def.heightCells,
       });
       if (!ok) return false;
+    }
+    // Launch clamps: height/umbilical without a full procedural config.
+    if (def.category === 'clamp' && (wantsResize || patch.clampUmbilicalCells !== undefined)) {
+      const next = {
+        ...placed.custom,
+        heightCells: patch.heightCells ?? placed.custom?.heightCells,
+        clampUmbilicalCells: patch.clampUmbilicalCells ?? placed.custom?.clampUmbilicalCells,
+      };
+      const before = resolvePartProps(def, placed.custom);
+      const after = resolvePartProps(def, next);
+      // Tentatively apply and reject if the new footprint collides.
+      const prevCustom = placed.custom;
+      placed.custom = next;
+      const blocked = overlapsAnyPart(
+        this.ctx.design,
+        this.ctx.catalog,
+        after.widthCells,
+        after.heightCells,
+        placed.xCells,
+        placed.yCells,
+        placed,
+      );
+      if (blocked || !inBounds(after.widthCells, after.heightCells, placed.xCells, placed.yCells)) {
+        placed.custom = prevCustom;
+        this.ctx.log('warn', 'Clamp resize rejected: no room.');
+        return false;
+      }
+      this.ctx.log(
+        'info',
+        `${def.name}: tower ${after.heightCells} × umbilical ${after.widthCells}` +
+          (before.heightCells !== after.heightCells || before.widthCells !== after.widthCells
+            ? ''
+            : ''),
+      );
     }
 
     if ('thrustLimiter' in patch) {
@@ -720,7 +874,9 @@ export class BuilderScene implements Scene {
     const def = this.ctx.catalog.get(placed.defId);
     if (!def) return;
     this.selectedPartIds.clear();
-    this.ctx.design.removePart(placed);
+    // Drop the geometric SYM twin too — otherwise re-placing with symmetry
+    // stacks a second twin, or the old twin sits orphaned after a move.
+    this.removePartAndSymmetryTwin(placed);
     this.designChanged();
     this.startDrag(def, placed.custom, e);
   }
@@ -971,26 +1127,32 @@ export class BuilderScene implements Scene {
 
     if (snap?.valid) {
       this.ctx.design.addPart(def.id, snap.xCells, snap.yCells, custom, snap.parentId ?? null);
-      // Mirror symmetry: also place the twin across the center column,
-      // unless it would coincide with the original or collide.
+      // Mirror symmetry: re-snap the twin (left↔right nodes), not just X-flip.
       if (this.symmetryOn) {
         const props = resolvePartProps(def, custom);
-        const mx = this.mirroredX(snap.xCells, props.widthCells);
-        const mirrorParent = mirroredParentId(
+        const twin = computeSymmetryTwin(
           this.ctx.design,
           this.ctx.catalog,
+          props,
+          snap.xCells,
+          snap.yCells,
           snap.parentId,
+          snap.parentNodeIndex,
+          snap.childNodeIndex,
         );
-        if (mx !== snap.xCells && this.canPlaceAt(props, mx, snap.yCells)) {
+        if (twin.valid && !twin.isIdentity) {
           this.ctx.design.addPart(
             def.id,
-            mx,
-            snap.yCells,
+            twin.xCells,
+            twin.yCells,
             custom ? { ...custom } : undefined,
-            mirrorParent,
+            twin.parentId,
           );
-        } else if (mx !== snap.xCells) {
-          this.ctx.log('warn', 'Symmetry twin skipped: no room on the mirrored side.');
+        } else if (!twin.isIdentity) {
+          this.ctx.log(
+            'warn',
+            `Symmetry twin skipped: ${twin.reason ?? 'no valid mirrored placement'}.`,
+          );
         }
       }
       this.designChanged();
@@ -1069,18 +1231,6 @@ export class BuilderScene implements Scene {
 
   // ------------------------------------------------------------ symmetry --
 
-  /** Mirror a placement across the center column (x = 0). */
-  private mirroredX(xCells: number, widthCells: number): number {
-    return -(xCells + widthCells);
-  }
-
-  private canPlaceAt(props: { widthCells: number; heightCells: number }, x: number, y: number): boolean {
-    return (
-      inBounds(props.widthCells, props.heightCells, x, y) &&
-      !overlapsAnyPart(this.ctx.design, this.ctx.catalog, props.widthCells, props.heightCells, x, y)
-    );
-  }
-
   /** Bottom-center column of the design (same frame as flight stack origin). */
   private designStackOrigin(): { xCells: number; yCells: number } {
     if (this.ctx.design.isEmpty) return { xCells: 0, yCells: 0 };
@@ -1101,6 +1251,18 @@ export class BuilderScene implements Scene {
     const origin = this.designStackOrigin();
     const baseXM = origin.xCells * cell;
     const baseYM = origin.yCells * cell;
+    // Core column for leg outward sign — not the bottom-most part (a clamp
+    // on the left would otherwise flip both struts the same way).
+    const coreCenterX = stackCoreCenterXCells(
+      this.ctx.design.parts.map((p) => {
+        const r = resolvePlacedPart(p, this.ctx.catalog);
+        return {
+          xCells: p.xCells,
+          widthCells: r?.props.widthCells ?? 1,
+          category: r?.def.category ?? 'utility',
+        };
+      }),
+    );
     for (const placed of this.ctx.design.parts) {
       const resolved = resolvePlacedPart(placed, this.ctx.catalog);
       if (!resolved) continue;
@@ -1115,7 +1277,7 @@ export class BuilderScene implements Scene {
           placed.rotationDeg ?? 0,
         );
         legPosePart = poseInPartLocal(
-          legPose(inst, 'stowed', baseXM, baseYM, origin.xCells),
+          legPose(inst, 'stowed', baseXM, baseYM, coreCenterX),
           inst,
           baseXM,
           baseYM,
@@ -1384,14 +1546,31 @@ export class BuilderScene implements Scene {
       g.circle((xCells + node.xCells) * cell, (yCells + node.yCells) * cell, 0.08)
         .fill(valid ? 0x4dff7a : 0xff5252);
     }
-    // Symmetry twin preview across the center column.
+    // Symmetry twin preview (same placement logic as drop).
     if (this.symmetryOn && valid) {
-      const mx = this.mirroredX(xCells, props.widthCells);
-      if (mx !== xCells) {
-        const twinOk = this.canPlaceAt(props, mx, yCells);
-        g.rect(mx * cell, yCells * cell, props.widthCells * cell, props.heightCells * cell)
+      const twin = computeSymmetryTwin(
+        this.ctx.design,
+        this.ctx.catalog,
+        props,
+        xCells,
+        yCells,
+        this.drag.snap.parentId,
+        this.drag.snap.parentNodeIndex,
+        this.drag.snap.childNodeIndex,
+      );
+      if (!twin.isIdentity) {
+        g.rect(
+          twin.xCells * cell,
+          twin.yCells * cell,
+          props.widthCells * cell,
+          props.heightCells * cell,
+        )
           .fill({ color: this.drag.def.color, alpha: 0.25 })
-          .stroke({ width: 0.06, color: twinOk ? 0x4dff7a : 0xff5252, alpha: 0.7 });
+          .stroke({
+            width: 0.06,
+            color: twin.valid ? 0x4dff7a : 0xff5252,
+            alpha: 0.7,
+          });
       }
     }
   }

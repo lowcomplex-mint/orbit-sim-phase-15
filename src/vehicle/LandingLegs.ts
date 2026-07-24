@@ -36,6 +36,37 @@ const BROKEN_REACH_FRAC = 0.42;
 /** Stowed strut runs slightly above the housing top (tucked along the hull). */
 const STOWED_TIP_FRAC = 1.04;
 
+/**
+ * Core column X for left/right flank tests. Ignores surface-mounted parts
+ * (legs, clamps, batteries, solar, chutes) so a pad clamp on the left does
+ * not become the "stack center" and flip both struts the same way.
+ */
+export function stackCoreCenterXCells(
+  parts: ReadonlyArray<{ xCells: number; widthCells: number; category: string }>,
+): number {
+  let sum = 0;
+  let n = 0;
+  for (const p of parts) {
+    const cat = p.category;
+    if (
+      cat === 'legs' ||
+      cat === 'clamp' ||
+      cat === 'utility' ||
+      cat === 'parachute'
+    ) {
+      continue;
+    }
+    sum += p.xCells + p.widthCells / 2;
+    n++;
+  }
+  if (n > 0) return sum / n;
+  for (const p of parts) {
+    sum += p.xCells + p.widthCells / 2;
+    n++;
+  }
+  return n > 0 ? sum / n : 0;
+}
+
 /** Which flank this leg sits on (by center column vs stack core). */
 export function legOutwardSign(part: PartInstance, stackCenterXCells: number): number {
   const cx = part.xCells + part.widthCells / 2;

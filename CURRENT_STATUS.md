@@ -1,14 +1,18 @@
 # Current Status
 
-Snapshot for handoff. Validated on 2026-07-21: `npm run build`, `npm run sim`,
-`npm run test:graph`, and `npm run test:builder` all pass. Phase 12 VAB flows
-were also exercised in a real browser at desktop and 390×844 mobile sizes with
-no page errors.
+Snapshot for handoff. Validated: `npm run build`, `npm run sim`,
+`npm run test:graph`, `npm run test:builder`, `npm run test:rotate`, and
+`npx tsx scripts/testSymmetry.ts` all pass.
 
 Phases landed: MVP → persistent world → radial attachment → sandbox systems →
 recovery loop → **Phase 7 fractional VAB grid** → **Phase 8 deployable legs** →
 **Phase 9 tree/Move/Root scaffolding** → **Phase 10 recovery sim suite** →
-**Phase 11 node/attachment graph** → **Phase 12 VAB warnings + group ops**.
+**Phase 11 node/attachment graph** → **Phase 12 VAB warnings + group ops** →
+**Phase 13 Rotate v2 + subassemblies** → **surface attach + clamp overhaul + SYM fixes**
+→ **leg outward-sign core-column fix**.
+
+Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
+(repo mirror: `documents/Grok additions/Handoff.md`).
 
 ---
 
@@ -16,79 +20,71 @@ recovery loop → **Phase 7 fractional VAB grid** → **Phase 8 deployable legs*
 
 ### `npm run sim`
 
-- **Flight core**: fixed-timestep gravity/integration, ascent, staging, saves,
-  reentry heating, attitude/SAS, career foundations, and vehicle analysis.
-- **Time warp**: physics warp plus body-relative analytic rails for bound
-  elliptic vacuum arcs, including suborbital coasts; atmosphere/SOI auto-drop.
-- **Landing/recovery**: deployable landing struts, surface-rest anti-skate,
-  parachutes, launch clamps, electricity, and the full recovery mission.
+- Flight core, staging, attitude, heating, saves, career, analysis.
+- Time warp: physics + rails for bound vacuum arcs (incl. suborbital); atm/SOI drop.
+- Landing/recovery: legs, stick-to-surface rest (no pad skate), chutes, electricity,
+  full recovery mission.
+- **Launch clamps:** KSP-cheaty infinite hold until stage release; debris clamp left
+  on pad. Sim covers pin / stage-2 release / liftoff.
 
 ### `npm run test:graph`
 
-- **Attachment graph (Phase 11)**: explicit stack/radial edges, derived trees,
-  structural validation, reroot, subtree move, mirror parent sync, and
-  disconnected-component detection.
-- Detached components retain their own deterministic derived tree while still
-  being reported as disconnected from the designated rocket root.
+- Attachment graph edges (node + surface), trees, reroot, move, mirror helpers,
+  disconnect + detached forest.
 
 ### `npm run test:builder`
 
-- **Selection geometry**: marquee normalization in every drag direction and
-  fractional-width part intersection.
-- **Group operations**: subtree-union expansion, fractional rigid move,
-  ancestor deduplication, multi-root/partial-subtree behavior, collision
-  rollback, duplicate with fresh ids/deep customization/exact parent topology,
-  and graph/root-safe deletion.
-- **Live VAB advisories**: missing control source, crew-capable return without
-  a chute retained across release parts, and landing struts off a hull flank.
+- Select marquee, group move/dup/delete, live BUILD CHECKS advisories.
 
-## ✅ Works and is browser-verified
+### `npm run test:rotate` (Phase 13)
 
-- **VAB Select tool**: box select for mouse/touch; `Shift` temporarily selects
-  from any tool; click toggles membership.
-- **Group operations**: switch to Move and drag any selected part; selected
-  subtree roots move rigidly. Floating DUP/DEL toolbar plus `Ctrl+D`/`Delete`.
-  Each committed operation is one undo/redo step; failed/cancelled moves do not
-  mutate the graph or history. Escape, undo/redo, design replacement, and
-  pointer cancellation safely retire in-flight selection gestures.
-- **Builder checks** appear live in the Engineer panel and remain advisory;
-  `validateDesign()` still owns launch-blocking structure/minimum-part rules.
-- Persistent selection/root overlays no longer conflict with stage hover.
-- Mobile top controls scroll horizontally; Engineer/Staging collapse correctly.
-- Existing Place, Move-subtree, Root, Snap, SYM, staging preview, CoM marker,
-  context menus, Space Center, Tracking Station, pause, map, and flight HUD.
+- Stack/radial pivot resolution; 90° stack quantization; joint preserved after spin.
+- Center-based rigid rotate; rotationDeg survives graph sync.
+- Subassembly extract / place.
+
+### `scripts/testSymmetry.ts`
+
+- SYM origin math, radial leg twin attaches with two radial edges, centerline identity.
+
+## ✅ Works in VAB (browser)
+
+- **Surface attach (KSP-style):** legs, batteries, solar, clamps snap flush to host
+  hull sides without requiring a node pair (`surfaceAttach` + hull flush graph edges).
+- **Landing strut art:** left/right outward sign uses **core stack center** (tanks/
+  engines/pods), not the bottom-most part — so pad clamps no longer flip both legs
+  the same way in VAB or flight.
+- **Launch clamps:** surface attach; right-click tower height (2–12) and umbilical
+  length (1–8); infinite pad hold until staged.
+- **SYM:** re-snaps twin via mirrored nodes (left↔right); picking up / deleting a
+  part also removes its geometric twin; ghost preview matches drop logic.
+- **Rotate v2:** Q/E, ↺/↻; stack → 90°; radial → Rot step.
+- **Subassemblies:** SUB+ / SUB… / selection SUB (localStorage library).
+- Select, Move, Root, Place, Snap, CoM, staging, context menus, BUILD CHECKS.
 
 ## 🟡 Partial / stubbed
 
-- `systems/Resources.ts` — only electricity simulated.
-- `systems/ManeuverNodes.ts` — data model only.
-- Map: single-body conic; no patched-conic SOI continuation.
-- Leg deploy animation / per-leg toggle / suspension / tip-over.
-- **Rotate v2** — pivot spec exists; the VAB control remains disabled.
-- A freshly duplicated group is intentionally detached and launch-invalid
-  until the player moves it onto a valid attachment node.
+- Resources (electricity only); maneuver nodes data-only.
+- Map: single-body conic.
+- Legs: no deploy animation / suspension / tip-over.
+- Subassemblies: localStorage only (no file export).
+- Rotate collision excludes mount parent (node-coincidence style).
+- Surface attach: lateral (L/R) flanks only; not full free-form on top/bottom.
 
 ## ❌ Not started
 
-- **Phase 13**: Rotate v2 + reusable subassemblies.
-- Tracking Station rename/filter/search; procedural adapters; RCS/docking;
-  tutorial/onboarding; audio; input rebinding.
-- Hyperbolic escape rails and patched-conic map previews.
+- Hyperbolic rails; patched-conic map; RCS/docking; fairings; tutorial; audio.
+- Tracking Station rename/filter; subassembly file I/O polish.
 
-## ⚠️ Do not touch without the matching gates
+## ⚠️ Gates
 
-- `vehicle/PartGraph.ts`, `vehicle/PartTree.ts`, builder group transforms:
-  run `npm run test:graph` and `npm run test:builder`.
-- `vehicle/StageSystem.ts`, `RocketRuntime.stage()`, recovery/rails physics:
-  run `npm run sim`.
-- Save serialization: all new persisted fields must remain optional and
-  backward compatible.
+| Change | Run |
+|--------|-----|
+| Graph / group / rotate / subassembly / SYM / surface | `test:graph` + `test:builder` + `test:rotate` (+ `testSymmetry`) |
+| Staging / rails / landing / clamps | `sim` |
+| Saves | optional fields only + `sim` |
 
-## Recommended next steps
+## Recommended next
 
-1. **Phase 13 design pass** — turn the existing pivot rules into Rotate v2
-   acceptance cases before re-enabling the control.
-2. **Subassemblies** — build save/load on stable ids, graph edges, and the
-   Phase 12 duplicate/group-selection backend.
-3. Optional flight depth: animated leg deployment, hyperbolic rails, then
-   patched-conic map continuation.
+1. Subassembly UI polish (named list, file export).
+2. Hyperbolic rails / patched conics.
+3. Leg deploy animation.

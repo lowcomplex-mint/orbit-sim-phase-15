@@ -1,5 +1,6 @@
 import { cellsNear, nodesMatch } from './AttachmentNode';
 import type { PartInstance } from './PartInstance';
+import { instancesSurfaceAttached } from './SurfaceAttach';
 
 /**
  * Connectivity-based staging (Phase 4). The old vertical-segment model is
@@ -34,7 +35,7 @@ export interface StagePlan {
   fuelGroup: Map<PartInstance, number>;
 }
 
-/** True when two parts share a pair of compatible nodes on the same vertex. */
+/** True when two parts share a node pair OR a KSP-style surface flush mate. */
 export function partsAttached(a: PartInstance, b: PartInstance): boolean {
   for (const na of a.worldNodes()) {
     for (const nb of b.worldNodes()) {
@@ -47,7 +48,7 @@ export function partsAttached(a: PartInstance, b: PartInstance): boolean {
       }
     }
   }
-  return false;
+  return instancesSurfaceAttached(a, b);
 }
 
 export function buildAdjacency(parts: PartInstance[]): Map<PartInstance, PartInstance[]> {

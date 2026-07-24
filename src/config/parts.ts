@@ -279,6 +279,7 @@ export const PART_DEFINITIONS: PartDefinition[] = [
     dragCoefficient: 0.45,
     frontalArea: 0.22,
     attachmentNodes: sideNodes(1, 3),
+    surfaceAttach: true,
     stageable: false,
     cost: 150,
     color: 0x8a7f6d,
@@ -306,13 +307,14 @@ export const PART_DEFINITIONS: PartDefinition[] = [
     color: 0x6b4f3a,
   },
   {
-    // Launch clamp: hangs on a tank flank, pins the vessel to the pad until
-    // its stage fires (defaults to stage 1, alongside radial decouplers).
-    // The released clamp stays behind on the pad as debris.
+    // Launch clamp (KSP-cheaty): surface-attachable; pins the vessel to the
+    // pad with infinite holding strength until its stage fires. Right-click
+    // to set tower height (heightCells) and umbilical length
+    // (clampUmbilicalCells). Released clamp stays as pad debris.
     id: 'launch-clamp',
     name: 'Launch Clamp',
     category: 'clamp',
-    widthCells: 1,
+    widthCells: 2,
     heightCells: 4,
     dryMass: 200,
     fuelCapacity: 0,
@@ -324,8 +326,9 @@ export const PART_DEFINITIONS: PartDefinition[] = [
     frontalArea: 0.4,
     attachmentNodes: [
       { xCells: 0, yCells: 3, kind: 'left' },
-      { xCells: 1, yCells: 3, kind: 'right' },
+      { xCells: 2, yCells: 3, kind: 'right' },
     ],
+    surfaceAttach: true,
     stageable: true,
     cost: 250,
     color: 0x5f6d7d,
@@ -346,6 +349,7 @@ export const PART_DEFINITIONS: PartDefinition[] = [
     dragCoefficient: 0.5,
     frontalArea: 0.2,
     attachmentNodes: sideNodes(0.5, 2),
+    surfaceAttach: true,
     stageable: false,
     cost: 350,
     electricCapacity: 300,
@@ -368,6 +372,7 @@ export const PART_DEFINITIONS: PartDefinition[] = [
     dragCoefficient: 0.6,
     frontalArea: 0.1,
     attachmentNodes: sideNodes(0.25, 1),
+    surfaceAttach: true,
     stageable: false,
     cost: 500,
     electricGenPerSec: 1.2,

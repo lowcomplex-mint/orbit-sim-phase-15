@@ -41,17 +41,18 @@ Connectivity for flight (`partsAttached` / staging) remains node-coincidence on 
 - **Preserves:** edge list and all placements; only `rootPartId` + derived `parentId` values change.
 - **Staging:** activation stages untouched (still keyed by part identity).
 
-### Rotate v2 *(Phase 13 — spec only)*
+### Rotate v2 *(Phase 13 — implemented)*
 
 | Mount role | Pivot | Axis | Allowed angles |
 |------------|-------|------|----------------|
 | **stack** | Shared stack node (parent↔child joint) | Perpendicular to stack axis (2D: point) | Quantized 90°/180° for stack parts |
-| **radial** | Mount point on host hull | Outward normal through mount (2D: spin in plane) | 90° steps typical; fine steps for decorative bits |
+| **radial** | Mount point on host hull | Outward normal through mount (2D: spin in plane) | Rot-step (default 15°; UI often 90°) |
 | **internal** | TBD | TBD | TBD |
 
-Subtree rotate (whole assembly in world space) uses the **stack joint** between the selected part and its parent; if the selected part is root, pivot = part center (discouraged for stack parts).
+Subtree rotate uses the **joint** between the selected part and its parent; if the selected part is root, pivot = part center.
 
-**Phase 11:** reset any non-zero `rotationDeg` on load (none in stock fixtures); free rotate UI disabled.
+**Implementation:** `src/builder/RotateOps.ts`, acceptance `npm run test:rotate`.  
+Geometry orbits **part centers** about the pivot (matches renderer). Graph sync **no longer wipes** `rotationDeg`. Overlap ignores the mount parent (node-coincidence style).
 
 ---
 

@@ -1,14 +1,14 @@
-import { inBounds, overlapsAnyPart } from './GridSystem';
+import { inBounds } from './GridSystem';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import { resolvePlacedPart } from '../vehicle/ProceduralPart';
 import { removeEdgesForPart } from '../vehicle/PartGraph';
 import {
-  applySubtreeRotation,
   applySubtreeTranslation,
-  rotationPivot,
   subtreeParts,
 } from '../vehicle/PartTree';
 import { RocketDesign, type PlacedPartData } from '../vehicle/RocketDesign';
+import { partsWouldOverlap } from './Collision';
+import { tryRotateSubtreeV2 } from './RotateOps';
 
 function designFits(
   design: RocketDesign,
@@ -19,11 +19,14 @@ function designFits(
     const resolved = resolvePlacedPart(p, catalog);
     if (!resolved) continue;
     const { widthCells, heightCells } = resolved.props;
-    if (
-      !inBounds(widthCells, heightCells, p.xCells, p.yCells) ||
-      overlapsAnyPart(design, catalog, widthCells, heightCells, p.xCells, p.yCells, ignore ?? p)
-    ) {
-      return false;
+    if (!inBounds(widthCells, heightCells, p.xCells, p.yCells)) return false;
+  }
+  for (let i = 0; i < design.parts.length; i++) {
+    for (let j = i + 1; j < design.parts.length; j++) {
+      const a = design.parts[i];
+      const b = design.parts[j];
+      if (ignore && (a === ignore || b === ignore)) continue;
+      if (partsWouldOverlap(a, b, catalog)) return false;
     }
   }
   return true;
@@ -51,32 +54,15 @@ export function tryTranslateSubtree(
   return true;
 }
 
-/** Rotate a subtree around its pivot if the result stays valid. */
+/** Rotate a subtree (Phase 13 pivot rules). Optional stepDeg for radial quantization. */
 export function tryRotateSubtree(
   design: RocketDesign,
   catalog: Map<string, PartDefinition>,
   rootId: string,
   deltaDeg: number,
+  stepDeg = 15,
 ): boolean {
-  if (deltaDeg === 0) return true;
-  const members = subtreeParts(design, rootId);
-  const snapshots = members.map((p) => ({
-    p,
-    x: p.xCells,
-    y: p.yCells,
-    rot: p.rotationDeg ?? 0,
-  }));
-  const pivot = rotationPivot(design, catalog, rootId);
-  applySubtreeRotation(members, pivot.xCells, pivot.yCells, deltaDeg);
-  if (!designFits(design, catalog)) {
-    for (const s of snapshots) {
-      s.p.xCells = s.x;
-      s.p.yCells = s.y;
-      s.p.rotationDeg = s.rot;
-    }
-    return false;
-  }
-  return true;
+  return tryRotateSubtreeV2(design, catalog, rootId, deltaDeg, stepDeg);
 }
 
 export function removeSubtree(design: RocketDesign, rootId: string): void {

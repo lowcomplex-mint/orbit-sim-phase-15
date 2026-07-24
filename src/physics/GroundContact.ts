@@ -1,5 +1,5 @@
 import { Vec2 } from '../math/Vec2';
-import { legContactPointsLocal } from '../vehicle/LandingLegs';
+import { legContactPointsLocal, stackCoreCenterXCells } from '../vehicle/LandingLegs';
 import type { PartInstance } from '../vehicle/PartInstance';
 import type { RocketRuntime } from '../vehicle/RocketRuntime';
 import { GRID_CELL_METERS } from '../config/constants';
@@ -39,8 +39,13 @@ function hullContactPointsLocal(rocket: RocketRuntime): Vec2[] {
 }
 
 function stackCenterXCells(parts: PartInstance[]): number {
-  const base = baseOriginOf(parts);
-  return base ? base.xM / GRID_CELL_METERS : 0;
+  return stackCoreCenterXCells(
+    parts.map((p) => ({
+      xCells: p.xCells,
+      widthCells: p.widthCells,
+      category: p.def.category,
+    })),
+  );
 }
 
 /** All ground contact samples in stack-local meters. */

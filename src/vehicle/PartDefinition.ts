@@ -84,6 +84,11 @@ export interface PartDefinition {
   frontalArea: number;
 
   attachmentNodes: AttachmentNodeDef[];
+  /**
+   * KSP-style surface attach: may mate flush to a host hull without a paired
+   * node (legs, batteries, solar, clamps). Undefined = category default.
+   */
+  surfaceAttach?: boolean;
   /** Whether activating a stage does something with this part (decouplers, chutes...). */
   stageable: boolean;
 

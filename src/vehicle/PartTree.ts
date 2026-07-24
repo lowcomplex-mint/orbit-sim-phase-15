@@ -239,7 +239,10 @@ export function normalizeDeg(deg: number): number {
   return d;
 }
 
-/** Apply a rigid rotation delta to every member of a subtree (positions + rotationDeg). */
+/**
+ * Legacy origin-based rotation (pre Phase 13). Prefer
+ * builder/RotateOps.applyRigidRotationAboutPivot which orbits part centers.
+ */
 export function applySubtreeRotation(
   members: PlacedPartData[],
   pivotX: number,

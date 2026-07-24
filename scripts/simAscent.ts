@@ -740,9 +740,9 @@ console.log('== Launch clamps ==');
     { defId: 'pod-mk1', xCells: -1, yCells: 4 },
     {
       defId: 'launch-clamp',
-      xCells: -2,
+      xCells: -3,
       yCells: 0,
-      custom: { igniteStage: 2 },
+      custom: { igniteStage: 2, heightCells: 4, clampUmbilicalCells: 2 },
     },
   ]);
   const clampValid = validateDesign(clampDesign, catalog);
@@ -870,9 +870,9 @@ console.log('== Full recovery mission ==');
     },
     {
       defId: 'launch-clamp',
-      xCells: -2,
+      xCells: -3,
       yCells: 0,
-      custom: { igniteStage: 2 },
+      custom: { igniteStage: 2, heightCells: 4, clampUmbilicalCells: 2 },
     },
   ]);
   const recValid = validateDesign(recoveryDesign, catalog);

@@ -28,30 +28,34 @@ npm run dev      # start the dev server, open the printed URL
 Other scripts:
 
 ```bash
-npm run build    # type-check (tsc --noEmit) + production build to dist/
-npm run preview  # serve the production build locally
-npm run sim      # headless deterministic regression suite (no browser)
-npm run test:graph    # attachment graph / tree regression suite
+npm run build         # type-check (tsc --noEmit) + production build to dist/
+npm run preview       # serve the production build locally
+npm run sim           # headless physics / recovery / rails / clamps / legs
+npm run test:graph    # attachment graph / tree (node + surface edges)
 npm run test:builder  # Phase 12 selection, group-op, and warning checks
+npm run test:rotate   # Phase 13 rotate v2 + subassemblies
+npx tsx scripts/testSymmetry.ts   # SYM mirror placement
 ```
 
 `npm run sim` is the fastest way to confirm the physics/systems layer is
 healthy after a change — it drives a real `FlightSession` in Node and checks
 ascent, staging, warp, saves, reentry heating, SAS, career, Moon-relative
-rails warp, and landing-strut touchdown (deploy/stow/break gates).
+rails warp, landing-strut touchdown, and launch-clamp hold/release.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| Drag from palette / placed part | Place / move (exact node snapping) |
+| Drag from palette / placed part | Place / move (node snap **or** surface flush for legs/utility/clamps) |
 | Drag empty space · wheel / pinch | Pan / zoom the editor camera |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | Select tool or `Shift`+drag | Box-select parts (`Shift`+click toggles) |
 | Move tool + drag selected part | Move selected subtrees as one rigid group |
+| Rotate tool · Q/E · ↺/↻ | Rotate subtree about mount joint (stack → 90°; radial uses Rot step) |
 | `Ctrl+D` / `Delete` | Duplicate / delete the selected subtrees |
-| SYM button | Mirror placement across the center column (use for landing-strut pairs) |
-| Right-click a placed part | Context menu: thrust limiter, ignition stage, tank size, nose/chute config |
+| SUB+ / SUB… / selection SUB | Save / place subassemblies (localStorage library) |
+| SYM button | Mirror placement across x=0 (re-snaps twin; pickup removes twin) |
+| Right-click a placed part | Context: engines, chutes, tanks, **clamp height/umbilical**, etc. |
 | STAGING panel (hover/tap a stage) | Highlights that stage's parts |
 | Throttle slider / `W` `S` / `Z` `X` | Throttle / full / cut |
 | `A` / `D` or ⟲ ⟳ | Rotate — rate command, torque-limited by wheels + gimbal |
@@ -110,12 +114,17 @@ Ground rules baked into the code (do not violate when continuing):
 - **Phase 12 builder checks are advisory**: live warnings flag missing control,
   crew-capable recovery without a retained chute, and incorrectly mounted
   landing struts. Launch-blocking structure rules remain in `validateDesign()`.
+- **Surface attach (KSP-style):** legs, batteries, solar panels, and clamps may
+  mate flush to a host hull without a node pair (`surfaceAttach` + flush edges
+  in `PartGraph` / `partsAttached`). Stack parts still use node coincidence.
+- **Rails warp** is allowed on any bound elliptic arc outside the atmosphere
+  (including suborbital coasts); it drops on atmosphere entry or SOI change.
 
 ## Landing struts (VAB + flight)
 
 Each **Landing Strut** part (`legs-1`) is a single LT-2-style radial leg — not a
-whole gear set. Mount one or more on tank flanks (left/right attachment nodes);
-use **SYM** to place mirrored pairs on the center column.
+whole gear set. **Surface-attach** anywhere along a tank/pod/engine flank (not
+only mid-height nodes); use **SYM** for mirrored pairs.
 
 - **Stowed** (default in the VAB and at spawn): strut folded upward along the hull.
 - **Deployed** (`LEGS` / `L`): hinges outward, hydraulic extension, foot pad;
@@ -123,10 +132,22 @@ use **SYM** to place mirrored pairs on the center column.
   crash-speed buff). Throttle up to lift off again.
 - **Broken**: hard-but-survivable touchdown with legs deployed; struts stay on
   the craft but no longer support or cushion.
+- On the ground, resting vessels **stick** to the body (no ice-skating around
+  the planet while “landed”).
 
 Deployed legs raise impact tolerance (12 → 20 m/s hull vs. foot contact).
 Stowed or broken legs use hull tolerance only. Geometry is shared between art
 and physics in `src/vehicle/LandingLegs.ts`.
+
+## Launch clamps
+
+**Launch Clamp** parts are KSP-cheaty pad holders:
+
+- Surface-attach (or node) to a stack flank; stage them away to release.
+- **Infinite holding strength** — mass/TWR ignored; engines can burn but the
+  vessel does not translate until clamps release.
+- Right-click: **tower height** (2–12 cells) and **umbilical length** (1–8 cells).
+- Released clamps remain as debris on the pad.
 
 ## Known limitations / caveats
 

@@ -86,6 +86,10 @@ export class PartContextMenu {
       this.buildThrustLimiter(menu, placed);
       this.buildIgnitionStage(menu, placed, stageCount, defaultIgniteStage);
     }
+    if (def.category === 'clamp') {
+      this.buildClampConfig(menu, placed);
+      this.buildIgnitionStage(menu, placed, stageCount, defaultIgniteStage);
+    }
     if (def.procedural) {
       this.buildSizeControls(menu, placed, def);
     }
@@ -285,6 +289,62 @@ export class PartContextMenu {
     }
     row.append(label, controls);
     menu.appendChild(row);
+  }
+
+  /** Tower height + umbilical reach (launch clamps). */
+  private buildClampConfig(menu: HTMLDivElement, placed: PlacedPartData): void {
+    const heightOf = () => Math.round(placed.custom?.heightCells ?? 4);
+    const umbOf = () => Math.round(placed.custom?.clampUmbilicalCells ?? 2);
+
+    const hRow = document.createElement('div');
+    hRow.className = 'ctx-row';
+    const hLabel = document.createElement('span');
+    const hRefresh = () => {
+      hLabel.textContent = `Tower height: ${heightOf()} cells`;
+    };
+    hRefresh();
+    const hControls = document.createElement('div');
+    hControls.className = 'ctx-btn-row';
+    hControls.append(
+      this.miniBtn('−', () => {
+        const next = Math.max(2, heightOf() - 1);
+        if (this.callbacks.onCustomize(placed, { heightCells: next })) hRefresh();
+      }),
+      this.miniBtn('+', () => {
+        const next = Math.min(12, heightOf() + 1);
+        if (this.callbacks.onCustomize(placed, { heightCells: next })) hRefresh();
+      }),
+    );
+    hRow.append(hLabel, hControls);
+    menu.appendChild(hRow);
+
+    const uRow = document.createElement('div');
+    uRow.className = 'ctx-row';
+    const uLabel = document.createElement('span');
+    const uRefresh = () => {
+      uLabel.textContent = `Umbilical length: ${umbOf()} cells`;
+    };
+    uRefresh();
+    const uControls = document.createElement('div');
+    uControls.className = 'ctx-btn-row';
+    uControls.append(
+      this.miniBtn('−', () => {
+        const next = Math.max(1, umbOf() - 1);
+        if (this.callbacks.onCustomize(placed, { clampUmbilicalCells: next })) uRefresh();
+      }),
+      this.miniBtn('+', () => {
+        const next = Math.min(8, umbOf() + 1);
+        if (this.callbacks.onCustomize(placed, { clampUmbilicalCells: next })) uRefresh();
+      }),
+    );
+    uRow.append(uLabel, uControls);
+    menu.appendChild(uRow);
+
+    const tip = document.createElement('div');
+    tip.className = 'ctx-row';
+    tip.style.opacity = '0.75';
+    tip.textContent = 'Holds any mass (KSP-style). Stages to release.';
+    menu.appendChild(tip);
   }
 
   private miniBtn(label: string, onClick: () => void): HTMLButtonElement {

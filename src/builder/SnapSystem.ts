@@ -8,6 +8,7 @@ import { resolvePlacedPart, type ResolvedPartProps } from '../vehicle/Procedural
 import type { RocketDesign } from '../vehicle/RocketDesign';
 import { worldAttachmentNodes } from '../vehicle/PartTree';
 import { freePlacementOrigin, inBounds, overlapsAnyPart } from './GridSystem';
+import { findSurfaceSnapCandidates } from './SurfaceAttach';
 
 /** What the builder is currently dragging: definition + resolved geometry. */
 export interface DraggedPart {
@@ -104,6 +105,29 @@ export function findSnap(
     }
   }
 
+  // KSP surface attach: flush to host hull without a node pair.
+  const surface = findSurfaceSnapCandidates(
+    design,
+    catalog,
+    dragged.props,
+    dragged.def,
+    pointerWorld,
+    snapStep,
+  );
+  for (const s of surface) {
+    if (!best || s.distSq < best.distSq) {
+      best = {
+        xCells: s.xCells,
+        yCells: s.yCells,
+        distSq: s.distSq,
+        parentId: s.parentId,
+        parentNodeIndex: -1,
+        childNodeIndex: -1,
+        mountKind: s.mountKind,
+      };
+    }
+  }
+
   if (best) {
     return {
       xCells: best.xCells,
@@ -111,8 +135,8 @@ export function findSnap(
       valid: true,
       attached: true,
       parentId: best.parentId,
-      parentNodeIndex: best.parentNodeIndex,
-      childNodeIndex: best.childNodeIndex,
+      parentNodeIndex: best.parentNodeIndex >= 0 ? best.parentNodeIndex : undefined,
+      childNodeIndex: best.childNodeIndex >= 0 ? best.childNodeIndex : undefined,
       mountKind: best.mountKind,
     };
   }

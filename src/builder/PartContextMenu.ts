@@ -15,9 +15,10 @@ import type { PlacedPartData } from '../vehicle/RocketDesign';
 import { formatMass } from '../math/Units';
 
 /**
- * Right-click (or long-press) context menu for placed parts in the EDITOR.
- * Exposes per-part customization: thrust limiter and ignition stage for
- * engines, width/height for procedural tanks, and part removal.
+ * Part settings menu for placed parts in the EDITOR (right-click, long-press
+ * on touch, or the selection-toolbar Edit button). Exposes per-part
+ * customization: thrust limiter and ignition stage for engines, chute/clamp
+ * config, width/height for procedural tanks, nose variants, and part removal.
  *
  * Tank dimensions are deliberately editable only here, in the editor —
  * flight has no part-editing UI at all, which enforces the "no resizing

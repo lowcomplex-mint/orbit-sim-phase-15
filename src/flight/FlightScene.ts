@@ -81,6 +81,11 @@ export class FlightScene implements Scene {
   private centerBtn!: HTMLButtonElement;
   private reentryVignette!: HTMLDivElement;
   private readonly wheelHandler = (e: WheelEvent) => this.onWheel(e);
+  /** Vessel-view pinch zoom (map mode uses MapCameraController instead). */
+  private readonly flightPinchPointers = new Map<number, { x: number; y: number }>();
+  private readonly flightPinchDown = (e: PointerEvent) => this.onFlightPinchDown(e);
+  private readonly flightPinchMove = (e: PointerEvent) => this.onFlightPinchMove(e);
+  private readonly flightPinchUp = (e: PointerEvent) => this.onFlightPinchUp(e);
 
   constructor(
     private readonly renderer: Renderer,
@@ -115,6 +120,10 @@ export class FlightScene implements Scene {
     };
     this.controls.attach();
     this.renderer.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
+    this.renderer.canvas.addEventListener('pointerdown', this.flightPinchDown);
+    this.renderer.canvas.addEventListener('pointermove', this.flightPinchMove);
+    this.renderer.canvas.addEventListener('pointerup', this.flightPinchUp);
+    this.renderer.canvas.addEventListener('pointercancel', this.flightPinchUp);
     this.mapCtrl.attach(this.renderer.canvas, () => ({
       width: this.renderer.viewWidth,
       height: this.renderer.viewHeight,
@@ -123,6 +132,7 @@ export class FlightScene implements Scene {
 
     this.mapMode = false;
     this.mapCtrl.enabled = false;
+    this.flightPinchPointers.clear();
     this.lastStatus = null;
     this.flightCam.setZoom(FLIGHT_CAMERA.initialPxPerMeter);
 
@@ -142,6 +152,11 @@ export class FlightScene implements Scene {
   exit(): void {
     this.controls.detach();
     this.renderer.canvas.removeEventListener('wheel', this.wheelHandler);
+    this.renderer.canvas.removeEventListener('pointerdown', this.flightPinchDown);
+    this.renderer.canvas.removeEventListener('pointermove', this.flightPinchMove);
+    this.renderer.canvas.removeEventListener('pointerup', this.flightPinchUp);
+    this.renderer.canvas.removeEventListener('pointercancel', this.flightPinchUp);
+    this.flightPinchPointers.clear();
     this.mapCtrl.detach();
     this.pauseMenu.destroy();
     this.engineerPanel.destroy();
@@ -375,6 +390,7 @@ export class FlightScene implements Scene {
     this.orbitRenderer.setVisible(this.mapMode);
     this.followBtn.hidden = !this.mapMode;
     this.centerBtn.hidden = !this.mapMode;
+    this.flightPinchPointers.clear();
     if (this.mapMode) this.mapCtrl.recenter(this.session.activeRuntime.position);
   }
 
@@ -387,6 +403,34 @@ export class FlightScene implements Scene {
     } else {
       this.flightCam.zoomBy(factor);
     }
+  }
+
+  private onFlightPinchDown(e: PointerEvent): void {
+    if (this.mapMode || this.paused) return;
+    this.flightPinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+
+  private onFlightPinchMove(e: PointerEvent): void {
+    if (this.mapMode || this.paused || !this.flightPinchPointers.has(e.pointerId)) return;
+    if (this.flightPinchPointers.size !== 2) {
+      this.flightPinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      return;
+    }
+    const [idA, idB] = [...this.flightPinchPointers.keys()];
+    const a = this.flightPinchPointers.get(idA)!;
+    const b = this.flightPinchPointers.get(idB)!;
+    const prevDist = Math.hypot(a.x - b.x, a.y - b.y);
+    this.flightPinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const a2 = this.flightPinchPointers.get(idA)!;
+    const b2 = this.flightPinchPointers.get(idB)!;
+    const dist = Math.hypot(a2.x - b2.x, a2.y - b2.y);
+    if (prevDist > 1 && dist > 1 && dist !== prevDist) {
+      this.flightCam.zoomBy(dist / prevDist);
+    }
+  }
+
+  private onFlightPinchUp(e: PointerEvent): void {
+    this.flightPinchPointers.delete(e.pointerId);
   }
 
   private reportEvents(events: StepEvents): void {

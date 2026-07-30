@@ -186,7 +186,9 @@ input.throttle {
   gap: 8px;
   justify-content: center;
   flex-wrap: wrap;
+  /* Children (buttons) re-enable hit testing; bar itself must not steal pans. */
   pointer-events: none;
+  z-index: 30;
 }
 
 .toolbar-tools {
@@ -199,6 +201,7 @@ input.throttle {
   justify-content: center;
   flex-wrap: wrap;
   pointer-events: none;
+  z-index: 30;
 }
 
 .btn.active {
@@ -260,10 +263,16 @@ input.throttle {
   flex-direction: column;
   gap: 8px;
   padding: 8px;
+  overflow-x: hidden;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Vertical list on desktop: allow browser pan-y for scrolling. */
+  touch-action: pan-y;
   background: rgba(8, 12, 24, 0.82);
   border-right: 1px solid #22304e;
   pointer-events: auto;
+  z-index: 22;
 }
 
 .part-card {
@@ -276,7 +285,8 @@ input.throttle {
   border: 1px solid #33436b;
   border-radius: 10px;
   cursor: grab;
-  touch-action: none;
+  /* Match palette scroll axis; drag starts after JS slop (see PartPalette). */
+  touch-action: pan-y;
   flex-shrink: 0;
 }
 
@@ -302,54 +312,166 @@ input.throttle {
   color: #8fa3c8;
 }
 
+/*
+ * Phone / narrow VAB: two scrollable top bars, compact collapsible side panels
+ * stacked in a reserved right column, horizontal palette along the bottom.
+ * Keep canvas free in the center.
+ */
 @media (max-width: 720px) {
-  .toolbar-top {
+  .builder-ui .toolbar-top,
+  .builder-ui .toolbar-tools {
+    /* Must receive pointer events so overflow-x can scroll on touch. */
+    pointer-events: auto;
     flex-wrap: nowrap;
     justify-content: flex-start;
+    align-items: center;
     overflow-x: auto;
     overflow-y: hidden;
-    padding-bottom: 4px;
-    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
     touch-action: pan-x;
+    scrollbar-width: none;
+    gap: 6px;
+    left: 0;
+    right: 0;
+    padding: 4px 6px;
+    background: rgba(5, 8, 16, 0.88);
+    border-bottom: 1px solid #1c2740;
   }
 
-  .toolbar-top::-webkit-scrollbar {
+  .builder-ui .toolbar-top::-webkit-scrollbar,
+  .builder-ui .toolbar-tools::-webkit-scrollbar,
+  .builder-ui .palette::-webkit-scrollbar,
+  .builder-ui .sel-toolbar::-webkit-scrollbar {
     display: none;
   }
 
-  .toolbar-top > * {
+  .builder-ui .toolbar-top {
+    top: env(safe-area-inset-top, 0px);
+    /* Leave room for the LOG button on the right. */
+    padding-right: 72px;
+  }
+
+  .builder-ui .toolbar-tools {
+    top: calc(env(safe-area-inset-top, 0px) + 48px);
+  }
+
+  .builder-ui .toolbar-top > *,
+  .builder-ui .toolbar-tools > * {
     flex: 0 0 auto;
   }
 
-  .toolbar-tools {
-    flex-wrap: nowrap;
+  .builder-ui .toolbar-top .btn,
+  .builder-ui .toolbar-tools .btn {
+    min-height: 40px;
+    min-width: 44px;
+    padding: 6px 10px;
+    font-size: 13px;
   }
 
-  .hint {
-    display: none; /* too crowded next to the bottom palette on phones */
+  .builder-ui .snap-controls {
+    flex-shrink: 0;
+    padding: 2px 4px;
   }
 
-  .palette {
+  .builder-ui .snap-controls .btn.tiny {
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  .builder-ui .hint {
+    display: none;
+  }
+
+  /* Bottom part tray — horizontal scroll */
+  .builder-ui .palette {
     top: auto;
     left: 0;
     right: 0;
-    bottom: 30px;
+    bottom: env(safe-area-inset-bottom, 0px);
     width: auto;
-    height: 128px;
+    height: 108px;
     flex-direction: row;
+    flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
     border-right: none;
     border-top: 1px solid #22304e;
+    padding: 6px 8px;
+    gap: 6px;
+    scrollbar-width: thin;
   }
 
-  .part-card {
-    min-width: 132px;
+  .builder-ui .part-card {
+    min-width: 118px;
+    min-height: 0;
+    padding: 6px;
+    /* Horizontal pan scrolls the tray; drag when finger moves up into canvas. */
+    touch-action: pan-x;
   }
 
-  .sel-toolbar {
-    bottom: 170px;
-    max-width: calc(100vw - 20px);
+  /* Selection strip sits just above the palette, full width, scrolls if needed */
+  .builder-ui .sel-toolbar {
+    left: 6px;
+    right: 6px;
+    bottom: calc(108px + 8px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    max-width: none;
+    width: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    justify-content: flex-start;
+  }
+
+  /*
+   * Engineer + Staging: share a right column above the palette.
+   * Collapsed = header chip only. Expanded = capped body so they never eat
+   * half the canvas or stack into each other.
+   */
+  .builder-ui .eng-panel,
+  .builder-ui .staging-panel {
+    left: auto;
+    right: 4px;
+    width: min(152px, 40vw);
+    max-height: none;
+    z-index: 24;
+  }
+
+  .builder-ui .eng-panel {
+    top: calc(env(safe-area-inset-top, 0px) + 100px);
+    bottom: auto;
+  }
+
+  .builder-ui .staging-panel {
+    top: auto;
+    bottom: calc(108px + 52px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .builder-ui .eng-panel.is-expanded,
+  .builder-ui .staging-panel.is-expanded {
+    max-height: min(168px, 26vh);
+  }
+
+  .builder-ui .eng-panel.is-expanded .eng-body,
+  .builder-ui .staging-panel.is-expanded .eng-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: min(128px, 20vh);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+
+  .builder-ui .eng-header {
+    min-height: 36px;
+    padding: 4px 8px;
+    font-size: 11px;
   }
 }
 
@@ -450,14 +572,7 @@ input.throttle {
   padding-left: 6px;
 }
 
-@media (max-width: 720px) {
-  .eng-panel {
-    top: 120px;
-    width: 176px;
-    /* Share the right column with the staging panel (24vh + gaps). */
-    max-height: calc(100% - 330px - 24vh);
-  }
-}
+/* Mobile eng-panel layout is under .builder-ui @media (max-width: 720px). */
 
 /* --- VAB snap controls (PlacementGrid) ------------------------------------ */
 
@@ -770,6 +885,68 @@ input.throttle {
   accent-color: #3f74d6;
 }
 
+/* Mobile: dock part settings as a bottom sheet so they stay on-screen. */
+@media (max-width: 720px) {
+  .ctx-menu {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    width: 100%;
+    min-width: 0;
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* --- modal text / list pickers (subassemblies, etc.) ------------------------- */
+
+.modal-text-input {
+  width: 100%;
+  min-height: 48px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  font-size: 16px; /* avoid iOS focus-zoom */
+  color: #e8eefc;
+  background: rgba(16, 24, 42, 0.95);
+  border: 1px solid #2a3a5c;
+  border-radius: 10px;
+}
+
+.list-picker-panel {
+  max-width: min(420px, 94vw);
+  max-height: min(80vh, 640px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 50vh;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.list-picker-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.list-picker-pick {
+  flex: 1;
+  text-align: left;
+  white-space: normal;
+}
+
 .checkbox-row {
   flex-direction: row;
   align-items: center;
@@ -818,13 +995,7 @@ input.throttle {
   padding-left: 4px;
 }
 
-@media (max-width: 720px) {
-  .staging-panel {
-    bottom: 170px;
-    width: 176px;
-    max-height: 24vh;
-  }
-}
+/* Mobile staging-panel layout is under .builder-ui @media (max-width: 720px). */
 
 /* --- tracking station extras -------------------------------------------------- */
 

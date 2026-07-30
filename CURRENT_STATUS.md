@@ -1,5 +1,6 @@
 # Current Status
 
+**Version:** 0.2.0  
 Snapshot for handoff. Validated: `npm run build`, `npm run sim`,
 `npm run test:graph`, `npm run test:builder`, `npm run test:rotate`, and
 `npx tsx scripts/testSymmetry.ts` all pass.
@@ -9,7 +10,7 @@ recovery loop → **Phase 7 fractional VAB grid** → **Phase 8 deployable legs*
 **Phase 9 tree/Move/Root scaffolding** → **Phase 10 recovery sim suite** →
 **Phase 11 node/attachment graph** → **Phase 12 VAB warnings + group ops** →
 **Phase 13 Rotate v2 + subassemblies** → **surface attach + clamp overhaul + SYM fixes**
-→ **leg outward-sign core-column fix**.
+→ **leg outward-sign core-column fix** → **Phase 14 A–B mobile port (partial C layout)**.
 
 Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
 (repo mirror: `documents/Grok additions/Handoff.md`).
@@ -53,13 +54,25 @@ Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
 - **Landing strut art:** left/right outward sign uses **core stack center** (tanks/
   engines/pods), not the bottom-most part — so pad clamps no longer flip both legs
   the same way in VAB or flight.
-- **Launch clamps:** surface attach; right-click tower height (2–12) and umbilical
-  length (1–8); infinite pad hold until staged.
+- **Launch clamps:** surface attach; right-click / long-press / **Edit** for tower
+  height (2–12) and umbilical (1–8); infinite pad hold until staged.
 - **SYM:** re-snaps twin via mirrored nodes (left↔right); picking up / deleting a
   part also removes its geometric twin; ghost preview matches drop logic.
 - **Rotate v2:** Q/E, ↺/↻; stack → 90°; radial → Rot step.
-- **Subassemblies:** SUB+ / SUB… / selection SUB (localStorage library).
-- Select, Move, Root, Place, Snap, CoM, staging, context menus, BUILD CHECKS.
+- **Subassemblies:** SUB+ / SUB… / selection SUB (localStorage; DOM modals, not
+  `window.prompt`).
+- Select, Move, Root, Place, Snap, CoM, staging, BUILD CHECKS.
+
+## ✅ Phase 14 mobile (0.2.0)
+
+| Piece | Status |
+|-------|--------|
+| **A — Audit** | `MOBILE_AUDIT.md` (code-path + phone follow-up) |
+| **B — Touch controls** | Long-press + selection **Edit** for part settings; mobile bottom-sheet context menu; subassembly DOM modals; flight vessel-view pinch zoom |
+| **Layout (partial C)** | Scrollable VAB toolbars; compact ENGINEER/STAGING chips (capped expand); bottom part tray; palette **scroll vs drag** disambiguation |
+| **Plan** | `phase planning/phase-14-mobile-port-plan.md` |
+
+Still open for later Phase 14: full gesture-priority module, denser landscape QA, PWA (stretch).
 
 ## 🟡 Partial / stubbed
 
@@ -69,11 +82,12 @@ Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
 - Subassemblies: localStorage only (no file export).
 - Rotate collision excludes mount parent (node-coincidence style).
 - Surface attach: lateral (L/R) flanks only; not full free-form on top/bottom.
+- Mobile: gesture priority still split across scenes (Phase 14 C).
 
 ## ❌ Not started
 
 - Hyperbolic rails; patched-conic map; RCS/docking; fairings; tutorial; audio.
-- Tracking Station rename/filter; subassembly file I/O polish.
+- Tracking Station rename/filter; subassembly file I/O polish; PWA.
 
 ## ⚠️ Gates
 
@@ -82,9 +96,10 @@ Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
 | Graph / group / rotate / subassembly / SYM / surface | `test:graph` + `test:builder` + `test:rotate` (+ `testSymmetry`) |
 | Staging / rails / landing / clamps | `sim` |
 | Saves | optional fields only + `sim` |
+| Mobile UI only | manual phone / DevTools + `build` |
 
 ## Recommended next
 
-1. Subassembly UI polish (named list, file export).
+1. Phase 14 C — unified gesture priority + landscape polish.
 2. Hyperbolic rails / patched conics.
 3. Leg deploy animation.

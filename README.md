@@ -1,10 +1,11 @@
 # Orbit Simulator
 
 A 2D, mobile-first spaceflight simulator (inspired by KSP / Spaceflight
-Simulator, all-original code and assets). Build a rocket on a strict grid,
-launch it, fly it to orbit around a fictional 1:10-scale Earth, warp to the
-Moon, reenter, and land. TypeScript + Vite + PixiJS, no backend, deterministic
-custom physics.
+Simulator, all-original code and assets). **v0.2.0.** Build a rocket on a
+strict grid, launch it, fly it to orbit around a fictional 1:10-scale Earth,
+warp to the Moon, reenter, and land. TypeScript + Vite + PixiJS, no backend,
+deterministic custom physics. Phone VAB: long-press / Edit for part settings,
+scrollable toolbars and parts tray.
 
 For a precise breakdown of what works vs. what is stubbed, see
 [CURRENT_STATUS.md](CURRENT_STATUS.md). For the developer-facing system map,
@@ -55,14 +56,14 @@ rails warp, landing-strut touchdown, and launch-clamp hold/release.
 | `Ctrl+D` / `Delete` | Duplicate / delete the selected subtrees |
 | SUB+ / SUB… / selection SUB | Save / place subassemblies (localStorage library) |
 | SYM button | Mirror placement across x=0 (re-snaps twin; pickup removes twin) |
-| Right-click a placed part | Context: engines, chutes, tanks, **clamp height/umbilical**, etc. |
+| Long-press / right-click / **Edit** on a part | Context: engines, chutes, tanks, **clamp height/umbilical**, etc. |
 | STAGING panel (hover/tap a stage) | Highlights that stage's parts |
 | Throttle slider / `W` `S` / `Z` `X` | Throttle / full / cut |
 | `A` / `D` or ⟲ ⟳ | Rotate — rate command, torque-limited by wheels + gimbal |
 | `G` / SAS button | Cycle SAS: stability / prograde / retrograde / off |
 | `Space` / STAGE | Fire next stage (spent stage becomes a persistent vessel) |
 | 🪂 / LEGS / `L` | Arm parachutes / deploy or stow all landing struts (`L` in flight only) |
-| `M` / MAP | Map view (pan by dragging, pinch/wheel zoom, FOLLOW/CENTER, Ap/Pe markers) |
+| `M` / MAP | Map view (pan by dragging, pinch/wheel zoom, FOLLOW/CENTER, Ap/Pe markers); vessel view also pinches |
 | `,` / `.` or ◄◄ ►► | Time warp: 1–4x physics, 10–1000x rails (bound vacuum arcs, Earth or Moon) |
 | `Esc` / ⏸ | Pause menu (resume, reverts, scene exits, quicksave/-load) |
 | `F5` / `F9` · `F3` | Quicksave / Quickload · debug overlay |
@@ -165,6 +166,7 @@ and physics in `src/vehicle/LandingLegs.ts`.
 
 The launch → orbit → Moon → reenter → land loop works, including procedural
 parachutes, LT-2-style landing struts with foot contact, launch clamps,
-electricity, Moon-relative rails warp, and graph-safe VAB multi-selection. See
+electricity, Moon-relative rails warp, graph-safe VAB multi-selection, and
+Phase 14 mobile touch paths (see [MOBILE_AUDIT.md](MOBILE_AUDIT.md)). See
 [CURRENT_STATUS.md](CURRENT_STATUS.md) for the full done/partial/stubbed
 breakdown and the recommended next development phase.

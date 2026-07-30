@@ -12,6 +12,7 @@ import { buildGridGraphic } from '../render/GridRenderer';
 import { buildPartGraphic } from '../render/RocketRenderer';
 import { analyzeVehicle } from '../systems/VehicleAnalysis';
 import { createButton, createRow } from '../ui/Buttons';
+import { showListPicker, showTextPrompt } from '../ui/ModalForms';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import { legPose, poseInPartLocal, stackCoreCenterXCells } from '../vehicle/LandingLegs';
 import { PartInstance } from '../vehicle/PartInstance';
@@ -89,16 +90,27 @@ interface GroupDrag {
 
 /** Undo/redo depth. Snapshots are tiny (design JSON), so keep plenty. */
 const HISTORY_LIMIT = 60;
+/** Touch long-press to open part settings without picking the part up. */
+const LONG_PRESS_MS = 480;
+/** Finger travel (px) that cancels long-press and starts a place-tool drag. */
+const LONG_PRESS_MOVE_PX = 12;
+
+interface PendingPartPress {
+  pointerId: number;
+  placed: PlacedPartData;
+  startClientX: number;
+  startClientY: number;
+  timer: number;
+}
 
 /**
  * The vehicle-assembly scene: grid, palette (with procedural sizing),
  * node-exact drag & drop, engineering panel, staging panel with stage
- * preview, right-click part customization, CoM marker, and design
- * management buttons.
+ * preview, part settings (right-click / long-press / Edit), CoM marker, and
+ * design management buttons.
  *
  * ALL design mutations funnel through designChanged() so the engineering
  * analysis, staging list, and CoM marker can never go stale.
- * TODO: builder camera pan/zoom for tall rockets; undo.
  */
 export class BuilderScene implements Scene {
   private root = new Container();
@@ -126,9 +138,13 @@ export class BuilderScene implements Scene {
   private groupDrag: GroupDrag | null = null;
   private selectionToolbar!: HTMLDivElement;
   private selectionCountEl!: HTMLSpanElement;
+  private editPartBtn!: HTMLButtonElement;
+  private multiSelectBtns: HTMLButtonElement[] = [];
   private toolBtns: Record<BuilderTool, HTMLButtonElement> | null = null;
   private hintEl!: HTMLDivElement;
   private lastWarnings = '';
+  /** Touch place-tool: hold still for settings, or move to pick up. */
+  private pendingPartPress: PendingPartPress | null = null;
 
   // --- editor camera state (pan/zoom/pinch) ---
   private readonly panPointers = new Map<number, { x: number; y: number }>();
@@ -191,6 +207,7 @@ export class BuilderScene implements Scene {
     this.history = [];
     this.historyIndex = -1;
     this.panPointers.clear();
+    this.clearPendingPartPress();
     this.selectedPartIds.clear();
     this.boxSelection = null;
     this.groupDrag = null;
@@ -213,6 +230,7 @@ export class BuilderScene implements Scene {
     this.renderer.canvas.removeEventListener('wheel', this.wheelHandler);
     window.removeEventListener('keydown', this.keyHandler);
     this.stopDragListeners();
+    this.clearPendingPartPress();
     this.drag = null;
     this.contextMenu.destroy();
     this.snapControls.destroy();
@@ -245,7 +263,7 @@ export class BuilderScene implements Scene {
 
   private buildUi(): void {
     this.uiRoot = document.createElement('div');
-    this.uiRoot.className = 'scene-ui';
+    this.uiRoot.className = 'scene-ui builder-ui';
 
     const toolbar = createRow('toolbar-top');
     this.symBtn = createButton(
@@ -319,8 +337,11 @@ export class BuilderScene implements Scene {
     this.selectionToolbar.hidden = true;
     this.selectionCountEl = document.createElement('span');
     this.selectionCountEl.className = 'sel-count';
-    this.selectionToolbar.append(
-      this.selectionCountEl,
+    this.editPartBtn = createButton('Edit', () => this.openEditForSelection(), {
+      className: 'small primary',
+      title: 'Part settings (long-press or right-click also work)',
+    });
+    this.multiSelectBtns = [
       createButton('DUP', () => this.duplicateSelection(), {
         className: 'small',
         title: 'Duplicate selection (Ctrl+D)',
@@ -333,10 +354,16 @@ export class BuilderScene implements Scene {
         className: 'small',
         title: 'Save selection as subassembly',
       }),
+    ];
+    this.selectionToolbar.append(
+      this.selectionCountEl,
+      this.editPartBtn,
+      ...this.multiSelectBtns,
       createButton(
         '✕',
         () => {
           this.selectedPartIds.clear();
+          this.selectedPartId = null;
           this.drawSelection();
         },
         { className: 'small', title: 'Clear selection' },
@@ -403,12 +430,14 @@ export class BuilderScene implements Scene {
       btn.classList.toggle('active', key === mode);
     }
     const hints: Record<BuilderTool, string> = {
-      place: 'Drag parts to build · right-click configures · Snap for fine placement · pan/zoom empty space.',
-      select: 'Drag a box over parts · click toggles · switch to Move and drag a selected part · SUB saves subassembly.',
+      place:
+        'Drag parts to build · long-press / right-click / Edit for settings · Snap · pan/zoom empty space.',
+      select:
+        'Drag a box · tap toggles · Edit for part settings · Move to drag group · SUB saves subassembly.',
       transform: 'Click a part and drag to move it with its subtree · respects Snap step.',
       rotate:
-        'Click a part · ↺/↻ or Q/E rotate about its mount joint · stack snaps to 90° · radial uses Rot step.',
-      reroot: 'Click a part to make it the tree root · staging order is unchanged.',
+        'Tap a part · ↺/↻ or Q/E rotate about mount · Edit for settings · stack 90° · radial uses Rot step.',
+      reroot: 'Tap a part to make it the tree root · staging order is unchanged.',
     };
     this.hintEl.textContent = hints[mode];
     this.drawSelection();
@@ -446,24 +475,26 @@ export class BuilderScene implements Scene {
       this.ctx.log('info', 'Select parts first (Select tool or Rotate selection).');
       return;
     }
-    const name =
-      typeof window !== 'undefined'
-        ? window.prompt('Subassembly name', 'My Subassembly')
-        : 'My Subassembly';
-    if (name === null) return;
-    const data = extractSubassembly(this.ctx.design, this.ctx.catalog, ids, name);
-    if (!data) {
-      this.ctx.log('warn', 'Could not extract subassembly from selection.');
-      return;
-    }
-    if (addToSubassemblyLibrary(data)) {
-      this.ctx.log(
-        'info',
-        `Saved subassembly "${data.name}" (${data.parts.length} part(s)). Use SUB… to place.`,
-      );
-    } else {
-      this.ctx.log('error', 'Could not save subassembly (storage unavailable).');
-    }
+    showTextPrompt(this.uiRoot, {
+      title: 'Save subassembly',
+      defaultValue: 'My Subassembly',
+      confirmLabel: 'Save',
+      onConfirm: (raw) => {
+        const data = extractSubassembly(this.ctx.design, this.ctx.catalog, ids, raw);
+        if (!data) {
+          this.ctx.log('warn', 'Could not extract subassembly from selection.');
+          return;
+        }
+        if (addToSubassemblyLibrary(data)) {
+          this.ctx.log(
+            'info',
+            `Saved subassembly "${data.name}" (${data.parts.length} part(s)). Use SUB… to place.`,
+          );
+        } else {
+          this.ctx.log('error', 'Could not save subassembly (storage unavailable).');
+        }
+      },
+    });
   }
 
   private placeSubassemblyFromLibrary(): void {
@@ -472,42 +503,41 @@ export class BuilderScene implements Scene {
       this.ctx.log('info', 'No saved subassemblies. Select parts and use SUB+ / SUB to save.');
       return;
     }
-    const lines = list.map((s, i) => `${i + 1}. ${s.name} (${s.parts.length} parts)`).join('\n');
-    const answer =
-      typeof window !== 'undefined'
-        ? window.prompt(`Place which subassembly?\n${lines}\n\nEnter number (or -N to delete):`, '1')
-        : '1';
-    if (answer === null) return;
-    const n = Number.parseInt(answer.trim(), 10);
-    if (!Number.isFinite(n) || n === 0) {
-      this.ctx.log('warn', 'Invalid subassembly choice.');
-      return;
-    }
-    if (n < 0) {
-      const idx = -n - 1;
-      if (removeFromSubassemblyLibrary(idx)) {
-        this.ctx.log('info', 'Subassembly removed from library.');
-      } else {
-        this.ctx.log('warn', 'Could not remove subassembly.');
-      }
-      return;
-    }
-    const data = list[n - 1];
-    if (!data) {
-      this.ctx.log('warn', 'No subassembly at that number.');
-      return;
-    }
-    const placed = placeSubassemblyAuto(this.ctx.design, this.ctx.catalog, data);
-    if (!placed) {
-      this.ctx.log('warn', 'No free space to place subassembly.');
-      return;
-    }
-    this.selectedPartIds = new Set(placed.map((p) => p.id!).filter(Boolean));
-    this.designChanged();
-    this.ctx.log(
-      'info',
-      `Placed "${data.name}" (${placed.length} parts) — snap onto the craft to attach.`,
-    );
+    showListPicker(this.uiRoot, {
+      title: 'Subassemblies',
+      emptyMessage: 'No saved subassemblies.',
+      items: list.map((s, i) => ({
+        id: String(i),
+        label: s.name,
+        detail: `${s.parts.length} parts`,
+      })),
+      onPick: (id) => {
+        const data = list[Number(id)];
+        if (!data) {
+          this.ctx.log('warn', 'No subassembly at that entry.');
+          return;
+        }
+        const placed = placeSubassemblyAuto(this.ctx.design, this.ctx.catalog, data);
+        if (!placed) {
+          this.ctx.log('warn', 'No free space to place subassembly.');
+          return;
+        }
+        this.selectedPartIds = new Set(placed.map((p) => p.id!).filter(Boolean));
+        this.designChanged();
+        this.ctx.log(
+          'info',
+          `Placed "${data.name}" (${placed.length} parts) — snap onto the craft to attach.`,
+        );
+      },
+      onDelete: (id) => {
+        const idx = Number(id);
+        if (removeFromSubassemblyLibrary(idx)) {
+          this.ctx.log('info', 'Subassembly removed from library.');
+        } else {
+          this.ctx.log('warn', 'Could not remove subassembly.');
+        }
+      },
+    });
   }
 
   private clearDesign(): void {
@@ -758,6 +788,7 @@ export class BuilderScene implements Scene {
       this.transformDrag ||
       this.boxSelection ||
       this.groupDrag ||
+      this.pendingPartPress ||
       e.button !== 0
     ) {
       return;
@@ -857,7 +888,8 @@ export class BuilderScene implements Scene {
       return;
     }
 
-    // Place tool: pick up part under cursor, otherwise pan.
+    // Place tool: empty space pans; parts pick up on mouse or after a short
+    // drag on touch. Long-press on touch opens part settings (no pickup).
     if (!placed) {
       if (this.selectedPartIds.size > 0) {
         this.selectedPartIds.clear();
@@ -871,8 +903,17 @@ export class BuilderScene implements Scene {
       }
       return;
     }
+    if (e.pointerType === 'mouse') {
+      this.beginPlacePickup(placed, e);
+      return;
+    }
+    this.beginPendingPartPress(placed, e);
+  }
+
+  private beginPlacePickup(placed: PlacedPartData, e: PointerEvent): void {
     const def = this.ctx.catalog.get(placed.defId);
     if (!def) return;
+    this.clearPendingPartPress();
     this.selectedPartIds.clear();
     // Drop the geometric SYM twin too — otherwise re-placing with symmetry
     // stacks a second twin, or the old twin sits orphaned after a move.
@@ -881,7 +922,55 @@ export class BuilderScene implements Scene {
     this.startDrag(def, placed.custom, e);
   }
 
+  private beginPendingPartPress(placed: PlacedPartData, e: PointerEvent): void {
+    this.clearPendingPartPress();
+    const timer = window.setTimeout(() => {
+      const pending = this.pendingPartPress;
+      if (!pending || pending.pointerId !== e.pointerId) return;
+      this.pendingPartPress = null;
+      // Part may have been removed by another path; re-resolve by identity.
+      if (!this.ctx.design.parts.includes(pending.placed)) return;
+      this.openPartContext(pending.placed, pending.startClientX, pending.startClientY);
+      this.ctx.log('info', 'Part settings — adjust here, or use Edit on the selection bar.');
+    }, LONG_PRESS_MS);
+    this.pendingPartPress = {
+      pointerId: e.pointerId,
+      placed,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      timer,
+    };
+    try {
+      this.renderer.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  private clearPendingPartPress(): void {
+    if (!this.pendingPartPress) return;
+    window.clearTimeout(this.pendingPartPress.timer);
+    this.pendingPartPress = null;
+  }
+
+  /** Promote a touch pending-press into a place-tool pickup drag. */
+  private promotePendingToPickup(e: PointerEvent): void {
+    const pending = this.pendingPartPress;
+    if (!pending || pending.pointerId !== e.pointerId) return;
+    this.clearPendingPartPress();
+    if (!this.ctx.design.parts.includes(pending.placed)) return;
+    this.beginPlacePickup(pending.placed, e);
+  }
+
   private onCanvasPanMove(e: PointerEvent): void {
+    if (this.pendingPartPress?.pointerId === e.pointerId) {
+      const pending = this.pendingPartPress;
+      const dist = Math.hypot(e.clientX - pending.startClientX, e.clientY - pending.startClientY);
+      if (dist >= LONG_PRESS_MOVE_PX) {
+        this.promotePendingToPickup(e);
+      }
+      return;
+    }
     if (this.drag) return;
     if (this.boxSelection?.pointerId === e.pointerId) {
       this.boxSelection.end = this.pointerToWorld(e);
@@ -927,6 +1016,18 @@ export class BuilderScene implements Scene {
   private onCanvasUp(e: PointerEvent): void {
     this.panPointers.delete(e.pointerId);
 
+    if (this.pendingPartPress?.pointerId === e.pointerId) {
+      // Short tap without move: select the part so Edit is available.
+      const pending = this.pendingPartPress;
+      this.clearPendingPartPress();
+      if (this.ctx.design.parts.includes(pending.placed) && pending.placed.id) {
+        this.selectedPartIds = new Set([pending.placed.id]);
+        this.selectedPartId = null;
+        this.drawSelection();
+      }
+      return;
+    }
+
     if (this.boxSelection?.pointerId === e.pointerId) {
       const box = this.boxSelection;
       this.boxSelection = null;
@@ -971,6 +1072,9 @@ export class BuilderScene implements Scene {
 
   private onCanvasCancel(e: PointerEvent): void {
     this.panPointers.delete(e.pointerId);
+    if (this.pendingPartPress?.pointerId === e.pointerId) {
+      this.clearPendingPartPress();
+    }
     if (this.boxSelection?.pointerId === e.pointerId) {
       this.selectedPartIds = new Set(this.boxSelection.selectionBefore);
       this.boxSelection = null;
@@ -1052,7 +1156,7 @@ export class BuilderScene implements Scene {
 
   private onContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    if (this.drag) return;
+    if (this.drag || this.pendingPartPress) return;
     const world = this.pointerToWorld(e as unknown as PointerEvent);
     const grid = worldToGrid(world);
     const placed = this.ctx.design.partAtGrid(grid.xCells, grid.yCells, this.ctx.catalog);
@@ -1060,19 +1164,49 @@ export class BuilderScene implements Scene {
       this.contextMenu.close();
       return;
     }
+    this.openPartContext(placed, e.clientX, e.clientY);
+  }
+
+  private openPartContext(placed: PlacedPartData, screenX: number, screenY: number): void {
     const def = this.ctx.catalog.get(placed.defId);
     if (!def || !this.lastRuntime) return;
-
     const index = this.ctx.design.parts.indexOf(placed);
     const instance = this.lastParts[index];
+    if (placed.id) {
+      this.selectedPartIds = new Set([placed.id]);
+      this.selectedPartId = null;
+      this.drawSelection();
+    }
     this.contextMenu.open(
-      e.clientX,
-      e.clientY,
+      screenX,
+      screenY,
       placed,
       def,
       this.lastRuntime.totalStageCount,
       instance ? this.lastRuntime.defaultIgniteStageOf(instance) : 1,
     );
+  }
+
+  /** Edit button: open settings for a single selected part. */
+  private openEditForSelection(): void {
+    const placed = this.resolveEditTarget();
+    if (!placed) {
+      this.ctx.log('info', 'Select a single part to edit (or long-press / right-click it).');
+      return;
+    }
+    const rect = this.renderer.canvas.getBoundingClientRect();
+    this.openPartContext(placed, rect.left + rect.width / 2, rect.top + rect.height * 0.35);
+  }
+
+  private resolveEditTarget(): PlacedPartData | null {
+    if (this.selectedPartIds.size === 1) {
+      const id = [...this.selectedPartIds][0];
+      return this.ctx.design.parts.find((p) => p.id === id) ?? null;
+    }
+    if (this.selectedPartId && this.selectedPartIds.size === 0) {
+      return this.ctx.design.parts.find((p) => p.id === this.selectedPartId) ?? null;
+    }
+    return null;
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -1372,8 +1506,16 @@ export class BuilderScene implements Scene {
         .stroke({ width: 0.06, color: 0x63d4ff, alpha: 0.8 });
     }
 
-    this.selectionToolbar.hidden = this.selectedPartIds.size === 0;
-    this.selectionCountEl.textContent = `${this.selectedPartIds.size} selected`;
+    const multi = this.selectedPartIds.size;
+    const rotateOnly = Boolean(this.selectedPartId) && multi === 0;
+    this.selectionToolbar.hidden = multi === 0 && !rotateOnly;
+    this.selectionCountEl.textContent =
+      multi > 0 ? `${multi} selected` : rotateOnly ? '1 part' : '';
+    const canEdit = this.resolveEditTarget() !== null;
+    this.editPartBtn.hidden = !canEdit;
+    for (const btn of this.multiSelectBtns) {
+      btn.hidden = multi === 0;
+    }
   }
 
   private duplicateSelection(): void {

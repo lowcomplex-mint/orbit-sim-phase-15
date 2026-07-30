@@ -159,6 +159,7 @@ export class EditorEngineeringPanel {
 
   private applyCollapsed(): void {
     this.body.hidden = this.collapsed;
+    this.root.classList.toggle('is-expanded', !this.collapsed);
     this.toggleIcon.textContent = this.collapsed ? '▸' : '▾';
   }
 }

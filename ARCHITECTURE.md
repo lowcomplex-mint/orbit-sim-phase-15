@@ -112,6 +112,10 @@ drives a full FlightSession headless and is the regression suite.
 - All design mutations funnel through `BuilderScene.designChanged()`, which
   drives redraw, analysis, staging panel, CoM marker, AND the undo/redo
   snapshot stack — new mutation sources stay undo-safe automatically.
+- Canvas pan/pinch/long-press priority is documented in
+  `ui/CanvasGestures.ts`; VAB, map, and flight vessel-view share
+  `PointerTracker` so two-finger pinch wins over one-finger camera pan and
+  over VAB marquee/long-press/group-move.
 - Free pan/zoom/pinch camera; mirror symmetry (2D equivalent of radial
   symmetry) with twin ghosts; right-click context menus (thrust limiter,
   ignition stage, procedural dims — editor-only by construction, nose

@@ -1,8 +1,10 @@
 # Phase 14 — Mobile Port Plan
 
-**Status:** Phase A complete; Phase B complete; partial Phase C (VAB phone
-layout + scrollable palette). Shipped in **v0.2.0**. Full gesture-priority
-module / landscape / PWA still open.
+**Status:** Phase A–C complete (gesture-priority module, landscape, PWA
+stretch). Shipped in **v0.2.1**. **On-device QA 2026-08-29** (25069PTEBG):
+gestures accepted; flight chrome **pinned** (better, not signed off). Phase D
+(performance profile) still open. Do not iterate HUD/navball/throttle without
+a Hasan mockup.
 **Audience:** Grok (executor), Hasan (owner), Claude (planner/reviewer)
 **Depends on:** Phase 13 tip (surface attach + clamp overhaul + SYM fixes), per Handoff.md
 
@@ -140,18 +142,20 @@ only, and re-verify “works” rows on a real device or DevTools emulation.
 
 ### Phase C — Gesture & layout conflicts
 
-- Define and document an explicit gesture priority (e.g., single-finger-down
-  on empty canvas = pan; single-finger-down on a part = move/drag; two-finger
-  = pinch-zoom; long-press = context menu; Select-tool active = marquee
-  regardless of finger count). Implement via one input-handling module rather
-  than scattered per-scene logic, if not already centralized.
-- Responsive scaling: HUD, navball, staging panel, VAB palette/toolbar must
-  reflow for common phone widths (~360–430px) in both portrait and landscape.
-- Add `viewport` meta + `touch-action` CSS to suppress page pinch-zoom and
-  pull-to-refresh; add safe-area-inset padding for notch/home-indicator
-  devices.
-- **Gate:** manual QA on ≥2 real devices (ideally one Android, one iOS) at a
-  couple of screen sizes each; no automated gate exists for this phase.
+**Done in v0.2.1.**
+
+- Explicit gesture priority lives in `src/ui/CanvasGestures.ts` (module
+  docstring). VAB, map, and flight vessel-view all use `PointerTracker`.
+  Two-finger pinch preempts pan / marquee / long-press / group-move; a live
+  part-placement ghost is kept and the camera zooms under it.
+- Phone layout applies at `max-width: 720px` **or** `max-height: 500px` so
+  landscape phones (often >720px wide) get the compact chrome. Extra
+  short-landscape rules shrink HUD chips, tray, and navball.
+- `overscroll-behavior: none` on `html, body`; existing viewport meta +
+  canvas `touch-action: none` + safe-area insets kept.
+- Flight ENGINEER panel: drag header to reposition, tap to collapse.
+- **Gate:** `npm run test:gestures` (tracker math) + `build`; live device QA
+  is the `MOBILE_QA_CHECKLIST.md` sheet (no headless touch driver).
 
 ### Phase D — Performance
 
@@ -165,11 +169,14 @@ only, and re-verify “works” rows on a real device or DevTools emulation.
 - **Gate:** `npm run sim` must be unaffected (it's headless/physics-only, no
   rendering) — this phase should not touch physics/, only render/.
 
-### Phase E — PWA / installability (stretch, do last, only if time allows)
+### Phase E — PWA / installability (stretch)
 
-- `manifest.json`, icons, `theme-color`, standalone display mode.
-- Optional offline service worker — feasible since there's no backend.
-- **Gate:** none automated; note a manual Lighthouse PWA check in the doc.
+**Done in v0.2.1 (basic installability).**
+
+- `public/manifest.json`, 192/512 icons, apple-touch-icon, `theme-color`,
+  standalone display.
+- Production-only service worker (`public/sw.js`) caches same-origin GETs.
+- **Gate:** none automated; Lighthouse PWA check still a manual follow-up.
 
 ### Phase F — Regression & docs
 
@@ -231,7 +238,6 @@ Phases B/C, but final sign-off should be on a real phone).
 
 ## One-line briefing
 
-> Phase A: most on-screen controls already exist (including VAB undo/redo and
-> viewport/touch CSS); real gaps are **context-menu part settings (zero touch
-> path)**, subassembly `prompt` UX, flight vessel-view zoom, gesture priority,
-> and layout/PWA polish — see `MOBILE_AUDIT.md`.
+> Phase A–C + PWA stretch shipped in v0.2.1. Phone QA: gestures OK, flight
+> chrome pinned. Remaining Phase 14 work is D (frame budget). Chrome layout
+> waits on a Hasan mockup. See `MOBILE_AUDIT.md` and `MOBILE_QA_CHECKLIST.md`.

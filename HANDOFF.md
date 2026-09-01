@@ -7,10 +7,11 @@
 
 **Short status:** `CURRENT_STATUS.md`  
 **Mobile audit:** `MOBILE_AUDIT.md`  
-**Phase 14 plan:** `phase planning/phase-14-mobile-port-plan.md`
+**Phase 14 plan:** `phase planning/phase-14-mobile-port-plan.md`  
+**Phase 15 plan:** `phase planning/phase-15-visual-overhaul.md` (**finished**)
 
-**Product:** **v0.2.0** — Phases through **13**, surface attach, clamps, SYM,
-plus **Phase 14 A–B** mobile touch path and VAB phone layout polish.
+**Product:** **v0.2.1** + Phase 15 SFS chrome (**finished**, uncommitted). Phone
+25069PTEBG. Hasan satisfied with the UI 2026-09-01.
 
 **Gates:** `build`, `sim`, `test:graph`, `test:builder`, `test:rotate`,
-`npx tsx scripts/testSymmetry.ts`
+`test:gestures`, `npx tsx scripts/testSymmetry.ts`

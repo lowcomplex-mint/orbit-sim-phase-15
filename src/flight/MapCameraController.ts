@@ -1,5 +1,6 @@
 import { MAP_CAMERA } from '../config/constants';
 import { Vec2 } from '../math/Vec2';
+import { capturePointer, PointerTracker } from '../ui/CanvasGestures';
 import { CameraController } from './CameraController';
 
 /**
@@ -26,7 +27,7 @@ export class MapCameraController {
 
   private canvas: HTMLCanvasElement | null = null;
   private getViewSize: (() => { width: number; height: number }) | null = null;
-  private readonly pointers = new Map<number, { x: number; y: number }>();
+  private readonly pointers = new PointerTracker();
 
   private readonly downHandler = (e: PointerEvent) => this.onPointerDown(e);
   private readonly moveHandler = (e: PointerEvent) => this.onPointerMove(e);
@@ -71,67 +72,36 @@ export class MapCameraController {
   zoomAtScreen(screenX: number, screenY: number, factor: number): void {
     if (!this.getViewSize) return;
     const { width, height } = this.getViewSize();
-    const before = this.camera.screenToWorld(screenX, screenY, width, height);
-    this.camera.zoomBy(factor);
-    const after = this.camera.screenToWorld(screenX, screenY, width, height);
-    this.camera.center = this.camera.center.add(before.sub(after));
+    this.camera.zoomAtScreen(screenX, screenY, factor, width, height);
   }
 
   // ---------------------------------------------------------- pointer input --
 
   private onPointerDown(e: PointerEvent): void {
     if (!this.enabled || !this.canvas) return;
-    this.pointers.set(e.pointerId, this.local(e));
-    try {
-      // Keep receiving moves when the finger leaves the canvas mid-drag.
-      // Can throw for already-released pointers; tracking works without it.
-      this.canvas.setPointerCapture(e.pointerId);
-    } catch {
-      /* non-fatal */
-    }
+    this.pointers.down(e.pointerId, this.local(e));
+    capturePointer(this.canvas, e.pointerId);
   }
 
   private onPointerMove(e: PointerEvent): void {
     if (!this.enabled || !this.pointers.has(e.pointerId)) return;
-    const current = this.local(e);
-
-    if (this.pointers.size === 1) {
-      // Drag pan: the world content follows the finger.
-      const previous = this.pointers.get(e.pointerId)!;
-      const dx = current.x - previous.x;
-      const dy = current.y - previous.y;
-      this.pointers.set(e.pointerId, current);
-      if (dx !== 0 || dy !== 0) {
-        const s = this.camera.pxPerMeter;
-        this.setFollow(false);
-        this.camera.center = this.camera.center.add(new Vec2(-dx / s, dy / s));
-      }
-    } else if (this.pointers.size === 2) {
-      // Pinch zoom around the midpoint: measure the two-pointer distance
-      // before and after applying this pointer's movement.
-      const [idA, idB] = [...this.pointers.keys()];
-      const beforeA = this.pointers.get(idA)!;
-      const beforeB = this.pointers.get(idB)!;
-      const prevDist = Math.hypot(beforeA.x - beforeB.x, beforeA.y - beforeB.y);
-      this.pointers.set(e.pointerId, current);
-      const afterA = this.pointers.get(idA)!;
-      const afterB = this.pointers.get(idB)!;
-      const dist = Math.hypot(afterA.x - afterB.x, afterA.y - afterB.y);
-      if (prevDist > 1 && dist > 1 && dist !== prevDist) {
-        this.setFollow(false);
-        this.zoomAtScreen(
-          (afterA.x + afterB.x) / 2,
-          (afterA.y + afterB.y) / 2,
-          dist / prevDist,
-        );
-      }
-    } else {
-      this.pointers.set(e.pointerId, current);
+    const result = this.pointers.move(e.pointerId, this.local(e));
+    if (result.pinch) {
+      this.setFollow(false);
+      this.zoomAtScreen(result.pinch.midX, result.pinch.midY, result.pinch.scale);
+      return;
+    }
+    if (result.pan && (result.pan.dx !== 0 || result.pan.dy !== 0)) {
+      const s = this.camera.pxPerMeter;
+      this.setFollow(false);
+      this.camera.center = this.camera.center.add(
+        new Vec2(-result.pan.dx / s, result.pan.dy / s),
+      );
     }
   }
 
   private onPointerUp(e: PointerEvent): void {
-    this.pointers.delete(e.pointerId);
+    this.pointers.up(e.pointerId);
   }
 
   private local(e: PointerEvent): { x: number; y: number } {

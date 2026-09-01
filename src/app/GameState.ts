@@ -39,6 +39,8 @@ export interface GameContext {
   career: CareerSystem;
   /** Convenience wrapper for bus.emit('log', ...). */
   log(level: LogLevel, message: string): void;
+  /** Open/close the debug log panel (scene-owned LOG buttons call this). */
+  toggleLog(): void;
   /** Modal confirmation for destructive actions. */
   confirm(message: string, onConfirm: () => void): void;
 }

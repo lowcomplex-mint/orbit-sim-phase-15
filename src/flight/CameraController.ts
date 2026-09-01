@@ -32,6 +32,23 @@ export class CameraController {
   }
 
   /**
+   * Zoom keeping the world point under (screenX, screenY) fixed.
+   * Screen coords are canvas-local pixels.
+   */
+  zoomAtScreen(
+    screenX: number,
+    screenY: number,
+    factor: number,
+    viewWidth: number,
+    viewHeight: number,
+  ): void {
+    const before = this.screenToWorld(screenX, screenY, viewWidth, viewHeight);
+    this.zoomBy(factor);
+    const after = this.screenToWorld(screenX, screenY, viewWidth, viewHeight);
+    this.center = this.center.add(before.sub(after));
+  }
+
+  /**
    * Write this camera into a container's transform. The negative y scale
    * flips physics "y up" into screen "y down".
    */

@@ -62,6 +62,7 @@ export class GameApp {
       session: null,
       career: new CareerSystem(log),
       log,
+      toggleLog: () => debugLog.toggle(),
       confirm: (message, onConfirm) => showConfirm(uiRoot, message, onConfirm),
     };
 

@@ -1,7 +1,7 @@
 import { Container } from 'pixi.js';
 import type { GameContext, Scene } from '../app/GameState';
 import { FLIGHT_CAMERA } from '../config/constants';
-import { formatDistance } from '../math/Units';
+import { clamp, formatDistance } from '../math/Units';
 import { predictOrbitPoints } from '../physics/OrbitPredictor';
 import type { OrbitInfo, OrbitStatus } from '../math/OrbitMath';
 import type { Renderer } from '../render/Renderer';
@@ -11,6 +11,7 @@ import { VesselView } from '../render/VesselView';
 import type { FlightSession } from '../systems/FlightSession';
 import type { StepEvents } from '../physics/RocketPhysics';
 import { createButton, createHoldButton, createRow } from '../ui/Buttons';
+import { PointerTracker } from '../ui/CanvasGestures';
 import { FlightEngineerPanel } from '../ui/FlightEngineerPanel';
 import { Hud } from '../ui/Hud';
 import { Navball } from '../ui/Navball';
@@ -76,13 +77,19 @@ export class FlightScene implements Scene {
   private lastStatus: OrbitStatus | null = null;
 
   private uiRoot!: HTMLDivElement;
-  private throttleSlider!: HTMLInputElement;
+  private throttleHit!: HTMLDivElement;
+  private throttleTrack!: HTMLDivElement;
+  private throttleFill!: HTMLDivElement;
+  private throttleThumb!: HTMLDivElement;
+  private throttleReadout!: HTMLSpanElement;
+  private throttleDragging = false;
   private followBtn!: HTMLButtonElement;
   private centerBtn!: HTMLButtonElement;
+  private mapSide!: HTMLDivElement;
   private reentryVignette!: HTMLDivElement;
   private readonly wheelHandler = (e: WheelEvent) => this.onWheel(e);
   /** Vessel-view pinch zoom (map mode uses MapCameraController instead). */
-  private readonly flightPinchPointers = new Map<number, { x: number; y: number }>();
+  private readonly flightPinchPointers = new PointerTracker();
   private readonly flightPinchDown = (e: PointerEvent) => this.onFlightPinchDown(e);
   private readonly flightPinchMove = (e: PointerEvent) => this.onFlightPinchMove(e);
   private readonly flightPinchUp = (e: PointerEvent) => this.onFlightPinchUp(e);
@@ -115,9 +122,7 @@ export class FlightScene implements Scene {
       onCycleSas: () => this.cycleSas(),
       onToggleLegs: () => this.toggleLegs(),
     });
-    this.controls.onThrottleChanged = (t) => {
-      this.throttleSlider.value = String(Math.round(t * 100));
-    };
+    this.controls.onThrottleChanged = (t) => this.syncThrottleUi(t);
     this.controls.attach();
     this.renderer.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
     this.renderer.canvas.addEventListener('pointerdown', this.flightPinchDown);
@@ -260,10 +265,10 @@ export class FlightScene implements Scene {
 
   private refreshSasButton(): void {
     const labels: Record<SasMode, string> = {
-      off: 'SAS ✗',
-      stability: 'SAS ◎',
-      prograde: 'SAS ▲',
-      retrograde: 'SAS ▼',
+      off: '○',
+      stability: '◎',
+      prograde: '▲',
+      retrograde: '▼',
     };
     this.sasBtn.textContent = labels[this.session.activeRuntime.sasMode];
   }
@@ -388,8 +393,7 @@ export class FlightScene implements Scene {
     this.mapMode = !this.mapMode;
     this.mapCtrl.enabled = this.mapMode;
     this.orbitRenderer.setVisible(this.mapMode);
-    this.followBtn.hidden = !this.mapMode;
-    this.centerBtn.hidden = !this.mapMode;
+    this.mapSide.hidden = !this.mapMode;
     this.flightPinchPointers.clear();
     if (this.mapMode) this.mapCtrl.recenter(this.session.activeRuntime.position);
   }
@@ -407,30 +411,20 @@ export class FlightScene implements Scene {
 
   private onFlightPinchDown(e: PointerEvent): void {
     if (this.mapMode || this.paused) return;
-    this.flightPinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.flightPinchPointers.down(e.pointerId, { x: e.clientX, y: e.clientY });
   }
 
   private onFlightPinchMove(e: PointerEvent): void {
     if (this.mapMode || this.paused || !this.flightPinchPointers.has(e.pointerId)) return;
-    if (this.flightPinchPointers.size !== 2) {
-      this.flightPinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      return;
-    }
-    const [idA, idB] = [...this.flightPinchPointers.keys()];
-    const a = this.flightPinchPointers.get(idA)!;
-    const b = this.flightPinchPointers.get(idB)!;
-    const prevDist = Math.hypot(a.x - b.x, a.y - b.y);
-    this.flightPinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const a2 = this.flightPinchPointers.get(idA)!;
-    const b2 = this.flightPinchPointers.get(idB)!;
-    const dist = Math.hypot(a2.x - b2.x, a2.y - b2.y);
-    if (prevDist > 1 && dist > 1 && dist !== prevDist) {
-      this.flightCam.zoomBy(dist / prevDist);
-    }
+    const result = this.flightPinchPointers.move(e.pointerId, {
+      x: e.clientX,
+      y: e.clientY,
+    });
+    if (result.pinch) this.flightCam.zoomBy(result.pinch.scale);
   }
 
   private onFlightPinchUp(e: PointerEvent): void {
-    this.flightPinchPointers.delete(e.pointerId);
+    this.flightPinchPointers.up(e.pointerId);
   }
 
   private reportEvents(events: StepEvents): void {
@@ -462,12 +456,29 @@ export class FlightScene implements Scene {
 
   // ------------------------------------------------------------------- UI --
 
+  private syncThrottleUi(t: number): void {
+    const pct = Math.round(clamp(t, 0, 1) * 100);
+    if (this.throttleReadout) this.throttleReadout.textContent = `${pct}`;
+    if (this.throttleFill) this.throttleFill.style.height = `${pct}%`;
+    if (this.throttleThumb) this.throttleThumb.style.bottom = `${pct}%`;
+    if (this.throttleTrack) this.throttleTrack.setAttribute('aria-valuenow', String(pct));
+  }
+
+  private setThrottleFromPointer(clientY: number): void {
+    const rect = this.throttleTrack.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    const t = 1 - (clientY - rect.top) / rect.height;
+    const value = clamp(t, 0, 1);
+    this.controls.setThrottle(value);
+    this.syncThrottleUi(value);
+  }
+
   private buildUi(): void {
     this.uiRoot = document.createElement('div');
-    this.uiRoot.className = 'scene-ui';
+    this.uiRoot.className = 'scene-ui flight-ui';
     const uiParent = document.getElementById('ui-root')!;
 
-    this.hud = new Hud(this.uiRoot);
+    this.hud = new Hud(this.uiRoot, () => this.ctx.toggleLog());
     this.navball = new Navball(this.uiRoot);
     this.engineerPanel = new FlightEngineerPanel(this.uiRoot);
     this.reentryVignette = document.createElement('div');
@@ -487,25 +498,57 @@ export class FlightScene implements Scene {
     const bottom = document.createElement('div');
     bottom.className = 'bar-bottom';
 
-    // Throttle slider (0-100), initialized from the (possibly resumed) session.
+    // Vertical side throttle (SFS-style). Up = more thrust.
+    const side = document.createElement('div');
+    side.className = 'flight-side';
     const throttleWrap = document.createElement('div');
-    throttleWrap.className = 'throttle-wrap';
+    throttleWrap.className = 'throttle-wrap throttle-vert';
+    this.throttleReadout = document.createElement('span');
+    this.throttleReadout.className = 'throttle-value';
     const throttleLabel = document.createElement('span');
     throttleLabel.className = 'throttle-label';
-    throttleLabel.textContent = 'THROTTLE';
-    this.throttleSlider = document.createElement('input');
-    this.throttleSlider.type = 'range';
-    this.throttleSlider.min = '0';
-    this.throttleSlider.max = '100';
-    this.throttleSlider.value = String(Math.round(this.session.activeRuntime.throttle * 100));
-    this.throttleSlider.className = 'throttle';
-    this.throttleSlider.addEventListener('input', () => {
-      this.controls.setThrottle(Number(this.throttleSlider.value) / 100);
+    throttleLabel.textContent = 'THR';
+    this.throttleTrack = document.createElement('div');
+    this.throttleTrack.className = 'throttle-track';
+    this.throttleTrack.setAttribute('role', 'slider');
+    this.throttleTrack.setAttribute('aria-label', 'Throttle');
+    this.throttleTrack.setAttribute('aria-orientation', 'vertical');
+    this.throttleTrack.setAttribute('aria-valuemin', '0');
+    this.throttleTrack.setAttribute('aria-valuemax', '100');
+    this.throttleFill = document.createElement('div');
+    this.throttleFill.className = 'throttle-fill';
+    this.throttleThumb = document.createElement('div');
+    this.throttleThumb.className = 'throttle-thumb';
+    this.throttleTrack.append(this.throttleFill, this.throttleThumb);
+    this.throttleHit = document.createElement('div');
+    this.throttleHit.className = 'throttle-hit';
+    this.throttleHit.appendChild(this.throttleTrack);
+    this.syncThrottleUi(this.session.activeRuntime.throttle);
+    this.throttleHit.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.throttleDragging = true;
+      try {
+        this.throttleHit.setPointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+      this.setThrottleFromPointer(e.clientY);
     });
-    throttleWrap.append(throttleLabel, this.throttleSlider);
+    this.throttleHit.addEventListener('pointermove', (e) => {
+      if (!this.throttleDragging) return;
+      this.setThrottleFromPointer(e.clientY);
+    });
+    const endThrottleDrag = () => {
+      this.throttleDragging = false;
+    };
+    this.throttleHit.addEventListener('pointerup', endThrottleDrag);
+    this.throttleHit.addEventListener('pointercancel', endThrottleDrag);
+    throttleWrap.append(this.throttleReadout, this.throttleHit, throttleLabel);
+    side.appendChild(throttleWrap);
 
     const controlRow = createRow();
-    this.sasBtn = createButton('SAS ◎', () => this.cycleSas(), {
+    this.sasBtn = createButton('◎', () => this.cycleSas(), {
+      className: 'icon',
       title: 'Cycle SAS mode: stability / prograde / retrograde / off (G)',
     });
     this.refreshSasButton();
@@ -522,29 +565,44 @@ export class FlightScene implements Scene {
       () => this.mapCtrl.recenter(this.session.activeRuntime.position),
       { title: 'Recenter map on the vessel' },
     );
-    this.followBtn.hidden = true;
-    this.centerBtn.hidden = true;
+    this.mapSide = document.createElement('div');
+    this.mapSide.className = 'map-side';
+    this.mapSide.hidden = true;
+    this.mapSide.append(this.followBtn, this.centerBtn);
+
+    const warpPair = document.createElement('div');
+    warpPair.className = 'dock-pair';
+    warpPair.append(
+      createButton('◄◄', () => this.session.stepWarp(-1), {
+        className: 'icon',
+        title: 'Slower time (,)',
+      }),
+      createButton('►►', () => this.session.stepWarp(1), {
+        className: 'icon',
+        title: 'Faster time (.)',
+      }),
+    );
 
     controlRow.append(
       createHoldButton(
         '⟲',
         () => (this.controls.touchRotate = 1),
         () => (this.controls.touchRotate = 0),
-        { title: 'Rotate left (A)' },
+        { className: 'icon', title: 'Rotate left (A)' },
       ),
       createHoldButton(
         '⟳',
         () => (this.controls.touchRotate = -1),
         () => (this.controls.touchRotate = 0),
-        { title: 'Rotate right (D)' },
+        { className: 'icon', title: 'Rotate right (D)' },
       ),
-      createButton('STAGE', () => this.doStage(), { className: 'primary', title: 'Space' }),
-      this.sasBtn,
-      createButton('◄◄', () => this.session.stepWarp(-1), { title: 'Slower time (,)' }),
-      createButton('►►', () => this.session.stepWarp(1), { title: 'Faster time (.)' }),
-      createButton('MAP', () => this.toggleMap(), { title: 'Toggle map view (M)' }),
-      this.followBtn,
-      this.centerBtn,
+      createButton('STAGE', () => this.doStage(), {
+        className: 'dock-text primary',
+        title: 'Stage (Space)',
+      }),
+      labeledDock('SAS', this.sasBtn),
+      labeledDock('', warpPair, clockCaption()),
+      createButton('⦿', () => this.toggleMap(), { className: 'icon', title: 'Toggle map view (M)' }),
       createButton(
         '🪂',
         () => {
@@ -556,14 +614,39 @@ export class FlightScene implements Scene {
               : 'No packed parachutes to arm.',
           );
         },
-        { title: 'Arm parachutes (deploy below their safe altitude)' },
+        { className: 'icon', title: 'Arm parachutes' },
       ),
-      createButton('LEGS', () => this.toggleLegs(), { title: 'Toggle landing legs (L)' }),
-      createButton('⏸', () => this.togglePause(), { title: 'Pause menu (Esc)' }),
+      createButton('Π', () => this.toggleLegs(), { className: 'icon', title: 'Toggle landing legs (L)' }),
+      createButton('⏸', () => this.togglePause(), { className: 'icon', title: 'Pause menu (Esc)' }),
     );
 
-    bottom.append(throttleWrap, controlRow);
-    this.uiRoot.appendChild(bottom);
+    bottom.append(controlRow);
+    this.uiRoot.append(side, this.mapSide, bottom);
     uiParent.appendChild(this.uiRoot);
   }
+}
+
+function labeledDock(caption: string, control: HTMLElement, captionNode?: HTMLElement): HTMLDivElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'dock-labeled';
+  const cap = captionNode ?? document.createElement('span');
+  if (!captionNode) {
+    cap.className = 'dock-caption';
+    cap.textContent = caption;
+  }
+  wrap.append(cap, control);
+  return wrap;
+}
+
+function clockCaption(): HTMLSpanElement {
+  const cap = document.createElement('span');
+  cap.className = 'dock-caption dock-clock';
+  cap.title = 'Time warp';
+  cap.setAttribute('aria-hidden', 'true');
+  cap.innerHTML =
+    '<svg viewBox="0 0 16 16" width="12" height="12">' +
+    '<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
+    '<path d="M8 4.5 V8 L10.5 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"/>' +
+    '</svg>';
+  return cap;
 }

@@ -11,7 +11,19 @@ import type { Renderer } from '../render/Renderer';
 import { buildGridGraphic } from '../render/GridRenderer';
 import { buildPartGraphic } from '../render/RocketRenderer';
 import { analyzeVehicle } from '../systems/VehicleAnalysis';
-import { createButton, createRow } from '../ui/Buttons';
+import {
+  createButton,
+  createRow,
+  createSymmetryButton,
+  createToolbarRule,
+} from '../ui/Buttons';
+import {
+  GESTURE_MOVE_SLOP_PX,
+  LONG_PRESS_MS,
+  PointerTracker,
+  capturePointer,
+  releasePointer,
+} from '../ui/CanvasGestures';
 import { showListPicker, showTextPrompt } from '../ui/ModalForms';
 import type { PartDefinition } from '../vehicle/PartDefinition';
 import { legPose, poseInPartLocal, stackCoreCenterXCells } from '../vehicle/LandingLegs';
@@ -90,10 +102,6 @@ interface GroupDrag {
 
 /** Undo/redo depth. Snapshots are tiny (design JSON), so keep plenty. */
 const HISTORY_LIMIT = 60;
-/** Touch long-press to open part settings without picking the part up. */
-const LONG_PRESS_MS = 480;
-/** Finger travel (px) that cancels long-press and starts a place-tool drag. */
-const LONG_PRESS_MOVE_PX = 12;
 
 interface PendingPartPress {
   pointerId: number;
@@ -146,8 +154,8 @@ export class BuilderScene implements Scene {
   /** Touch place-tool: hold still for settings, or move to pick up. */
   private pendingPartPress: PendingPartPress | null = null;
 
-  // --- editor camera state (pan/zoom/pinch) ---
-  private readonly panPointers = new Map<number, { x: number; y: number }>();
+  // --- editor camera state (pan/zoom/pinch via CanvasGestures) ---
+  private readonly panPointers = new PointerTracker();
   // --- undo/redo (design snapshots through the single mutation funnel) ---
   private history: string[] = [];
   private historyIndex = -1;
@@ -266,30 +274,40 @@ export class BuilderScene implements Scene {
     this.uiRoot.className = 'scene-ui builder-ui';
 
     const toolbar = createRow('toolbar-top');
-    this.symBtn = createButton(
-      'SYM ✗',
+    this.symBtn = createSymmetryButton(
       () => {
         this.symmetryOn = !this.symmetryOn;
-        this.symBtn.textContent = this.symmetryOn ? 'SYM ✓' : 'SYM ✗';
+        this.symBtn.classList.toggle('active', this.symmetryOn);
         this.ctx.log('info', `Mirror symmetry ${this.symmetryOn ? 'on' : 'off'}.`);
       },
       { title: 'Mirror placement across the center column' },
     );
-    toolbar.append(
+    const navCluster = createRow('toolbar-cluster');
+    navCluster.append(
       createButton('◄ KSC', () => this.onExitToCenter(), { title: 'Back to Space Center' }),
       createButton('↶', () => this.undo(), { title: 'Undo (Ctrl+Z)' }),
       createButton('↷', () => this.redo(), { title: 'Redo (Ctrl+Y)' }),
-      this.symBtn,
-      createButton('FIT', () => this.fitView(), { title: 'Reset editor camera' }),
     );
-    this.snapControls = new SnapControls(toolbar, (step) => {
+    const snapCluster = createRow('toolbar-cluster');
+    this.snapControls = new SnapControls(snapCluster, (step) => {
       this.rebuildGrid(step);
       this.ctx.log('info', `Placement snap: ${formatSnapStep(step)}.`);
     });
-    this.rotateControls = new RotateControls(toolbar, (step) => {
+    this.rotateControls = new RotateControls(snapCluster, (step) => {
       this.ctx.log('info', `Rotation step: ${step}° (stack mounts always quantize to 90°).`);
     });
     this.rotateControls.setEnabled(true);
+    const fileCluster = createRow('toolbar-cluster');
+    fileCluster.append(
+      createButton('Clear', () => this.clearDesign()),
+      createButton('Default', () => this.loadDefault()),
+      createButton('Save', () => this.saveDesign()),
+      createButton('Load', () => this.loadDesign()),
+      createButton('LAUNCH', () => this.tryLaunch(), { className: 'primary' }),
+      createButton('☰', () => this.ctx.toggleLog(), { className: 'icon', title: 'Log' }),
+    );
+    toolbar.append(navCluster, snapCluster, createToolbarRule(), fileCluster);
+
     const toolRow = createRow('toolbar-tools');
     this.toolBtns = {
       place: createButton('Place', () => this.setTool('place'), { title: 'Place parts (default)' }),
@@ -302,18 +320,23 @@ export class BuilderScene implements Scene {
       }),
       reroot: createButton('Root', () => this.setTool('reroot'), { title: 'Set tree root part' }),
     };
-    toolRow.append(
+    const toolCluster = createRow('toolbar-cluster');
+    toolCluster.append(
       this.toolBtns.place,
       this.toolBtns.select,
       this.toolBtns.transform,
       this.toolBtns.rotate,
       this.toolBtns.reroot,
+    );
+    const editCluster = createRow('toolbar-cluster');
+    editCluster.append(
       createButton('↺', () => this.applyRotation(-this.rotateControls.rotateStep), {
         title: 'Rotate CCW (Q)',
       }),
       createButton('↻', () => this.applyRotation(this.rotateControls.rotateStep), {
         title: 'Rotate CW (E)',
       }),
+      this.symBtn,
       createButton('SUB+', () => this.saveSelectionAsSubassembly(), {
         title: 'Save selection as subassembly',
       }),
@@ -321,13 +344,7 @@ export class BuilderScene implements Scene {
         title: 'Place a saved subassembly',
       }),
     );
-    toolbar.append(
-      createButton('Clear', () => this.clearDesign()),
-      createButton('Default', () => this.loadDefault()),
-      createButton('Save', () => this.saveDesign()),
-      createButton('Load', () => this.loadDesign()),
-      createButton('LAUNCH', () => this.tryLaunch(), { className: 'primary' }),
-    );
+    toolRow.append(toolCluster, createToolbarRule(), editCluster);
 
     this.hintEl = document.createElement('div');
     this.hintEl.className = 'hint';
@@ -746,6 +763,7 @@ export class BuilderScene implements Scene {
   ): void {
     this.contextMenu.close();
     this.drag = { def, custom, props: resolvePartProps(def, custom), snap: null };
+    this.panPointers.down(e.pointerId, this.canvasLocal(e));
     window.addEventListener('pointermove', this.pointerMoveHandler);
     window.addEventListener('pointerup', this.pointerUpHandler);
     this.onPointerMove(e);
@@ -757,7 +775,7 @@ export class BuilderScene implements Scene {
   }
 
   /** Cancel a marquee/group gesture so a later pointer-up cannot commit it. */
-  private cancelSelectionGesture(restoreBoxSelection = true): boolean {
+  private cancelSelectionGesture(restoreBoxSelection = true, releaseCaptures = true): boolean {
     const box = this.boxSelection;
     const group = this.groupDrag;
     if (!box && !group) return false;
@@ -767,32 +785,58 @@ export class BuilderScene implements Scene {
     }
     this.boxSelection = null;
     this.groupDrag = null;
-    for (const pointerId of [box?.pointerId, group?.pointerId]) {
-      if (pointerId === undefined) continue;
-      try {
-        if (this.renderer.canvas.hasPointerCapture(pointerId)) {
-          this.renderer.canvas.releasePointerCapture(pointerId);
-        }
-      } catch {
-        /* capture may already have been released by the browser */
+    if (releaseCaptures) {
+      for (const pointerId of [box?.pointerId, group?.pointerId]) {
+        if (pointerId === undefined) continue;
+        releasePointer(this.renderer.canvas, pointerId);
       }
     }
     this.drawSelection();
     return true;
   }
 
+  /**
+   * Two-finger pinch wins: drop one-finger exclusive gestures (marquee,
+   * group-move, long-press, Move-tool subtree) so the camera can zoom.
+   * A live part-placement ghost is left alone — pinch zooms under it.
+   */
+  private preemptOneFingerForPinch(): void {
+    this.clearPendingPartPress();
+    this.cancelSelectionGesture(true, false);
+    if (this.transformDrag) this.abortTransformDrag();
+  }
+
+  private abortTransformDrag(): void {
+    const drag = this.transformDrag;
+    if (!drag) return;
+    this.transformDrag = null;
+    this.stopDragListeners();
+    this.ghostG.clear();
+    const members = subtreeParts(this.ctx.design, drag.rootId);
+    for (let i = 0; i < members.length; i++) {
+      members[i].xCells = drag.snapshots[i].xCells;
+      members[i].yCells = drag.snapshots[i].yCells;
+    }
+    this.redrawParts();
+    this.drawSelection();
+  }
+
   /** Route selection, graph transforms, normal pickup, and camera gestures. */
   private onCanvasDown(e: PointerEvent): void {
-    if (
-      this.drag ||
-      this.transformDrag ||
-      this.boxSelection ||
-      this.groupDrag ||
-      this.pendingPartPress ||
-      e.button !== 0
-    ) {
+    if (e.button !== 0) return;
+
+    this.panPointers.down(e.pointerId, this.canvasLocal(e));
+    capturePointer(this.renderer.canvas, e.pointerId);
+
+    // Two fingers → pinch. Wins over pan / marquee / long-press / group move.
+    if (this.panPointers.size >= 2) {
+      this.preemptOneFingerForPinch();
       return;
     }
+
+    // Placement ghost or Move-tool subtree already owns the first finger.
+    if (this.drag || this.transformDrag) return;
+
     const world = this.pointerToWorld(e);
     const grid = worldToGrid(world);
     const placed = this.ctx.design.partAtGrid(grid.xCells, grid.yCells, this.ctx.catalog);
@@ -805,6 +849,7 @@ export class BuilderScene implements Scene {
         else this.selectedPartIds.add(placed.id);
         this.selectedPartId = null;
         this.drawSelection();
+        this.panPointers.up(e.pointerId);
         return;
       }
       const selectionBefore = new Set(this.selectedPartIds);
@@ -816,11 +861,6 @@ export class BuilderScene implements Scene {
         additive: e.shiftKey,
         selectionBefore,
       };
-      try {
-        this.renderer.canvas.setPointerCapture(e.pointerId);
-      } catch {
-        /* non-fatal */
-      }
       this.drawSelection();
       return;
     }
@@ -830,6 +870,7 @@ export class BuilderScene implements Scene {
         this.selectedPartId = placed.id;
         this.designChanged();
         this.ctx.log('info', 'Tree root updated.');
+        this.panPointers.up(e.pointerId);
       }
       return;
     }
@@ -838,19 +879,12 @@ export class BuilderScene implements Scene {
       this.selectedPartId = placed?.id ?? null;
       this.drawSelection();
       if (!placed) this.ctx.log('info', 'Click a part to select for rotation.');
+      else this.panPointers.up(e.pointerId);
       return;
     }
 
     if (this.toolMode === 'transform') {
-      if (!placed?.id) {
-        this.panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        try {
-          this.renderer.canvas.setPointerCapture(e.pointerId);
-        } catch {
-          /* non-fatal */
-        }
-        return;
-      }
+      if (!placed?.id) return;
 
       if (this.selectedPartIds.has(placed.id) && this.selectedPartIds.size > 0) {
         const affectedIds = expandGroupIds(this.ctx.design, [...this.selectedPartIds]);
@@ -864,11 +898,6 @@ export class BuilderScene implements Scene {
           dxCells: 0,
           dyCells: 0,
         };
-        try {
-          this.renderer.canvas.setPointerCapture(e.pointerId);
-        } catch {
-          /* non-fatal */
-        }
         this.drawSelection();
         return;
       }
@@ -894,12 +923,6 @@ export class BuilderScene implements Scene {
       if (this.selectedPartIds.size > 0) {
         this.selectedPartIds.clear();
         this.drawSelection();
-      }
-      this.panPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      try {
-        this.renderer.canvas.setPointerCapture(e.pointerId);
-      } catch {
-        /* non-fatal */
       }
       return;
     }
@@ -940,11 +963,6 @@ export class BuilderScene implements Scene {
       startClientY: e.clientY,
       timer,
     };
-    try {
-      this.renderer.canvas.setPointerCapture(e.pointerId);
-    } catch {
-      /* non-fatal */
-    }
   }
 
   private clearPendingPartPress(): void {
@@ -966,18 +984,17 @@ export class BuilderScene implements Scene {
     if (this.pendingPartPress?.pointerId === e.pointerId) {
       const pending = this.pendingPartPress;
       const dist = Math.hypot(e.clientX - pending.startClientX, e.clientY - pending.startClientY);
-      if (dist >= LONG_PRESS_MOVE_PX) {
+      if (dist >= GESTURE_MOVE_SLOP_PX) {
         this.promotePendingToPickup(e);
       }
       return;
     }
-    if (this.drag) return;
-    if (this.boxSelection?.pointerId === e.pointerId) {
+    if (this.boxSelection?.pointerId === e.pointerId && this.panPointers.size < 2) {
       this.boxSelection.end = this.pointerToWorld(e);
       this.drawSelection();
       return;
     }
-    if (this.groupDrag?.pointerId === e.pointerId) {
+    if (this.groupDrag?.pointerId === e.pointerId && this.panPointers.size < 2) {
       const grid = worldToGrid(this.pointerToWorld(e));
       const step = this.snapControls.snapStep;
       this.groupDrag.dxCells = snapValue(grid.xCells - this.groupDrag.startGridX, step);
@@ -986,35 +1003,29 @@ export class BuilderScene implements Scene {
       return;
     }
     if (!this.panPointers.has(e.pointerId)) return;
-    const current = { x: e.clientX, y: e.clientY };
-
-    if (this.panPointers.size === 1) {
-      const previous = this.panPointers.get(e.pointerId)!;
+    const result = this.panPointers.move(e.pointerId, this.canvasLocal(e));
+    if (result.pinch) {
+      this.camera.zoomAtScreen(
+        result.pinch.midX,
+        result.pinch.midY,
+        result.pinch.scale,
+        this.renderer.viewWidth,
+        this.renderer.viewHeight,
+      );
+      return;
+    }
+    // Don't pan the camera while a part ghost or subtree-move is in flight.
+    if (this.drag || this.transformDrag) return;
+    if (result.pan && (result.pan.dx !== 0 || result.pan.dy !== 0)) {
       const s = this.camera.pxPerMeter;
       this.camera.center = this.camera.center.add(
-        new Vec2(-(current.x - previous.x) / s, (current.y - previous.y) / s),
+        new Vec2(-result.pan.dx / s, result.pan.dy / s),
       );
-      this.panPointers.set(e.pointerId, current);
-    } else if (this.panPointers.size === 2) {
-      // Pinch zoom (same approach as the map camera; TODO unify gestures).
-      const [idA, idB] = [...this.panPointers.keys()];
-      const a = this.panPointers.get(idA)!;
-      const b = this.panPointers.get(idB)!;
-      const prevDist = Math.hypot(a.x - b.x, a.y - b.y);
-      this.panPointers.set(e.pointerId, current);
-      const a2 = this.panPointers.get(idA)!;
-      const b2 = this.panPointers.get(idB)!;
-      const dist = Math.hypot(a2.x - b2.x, a2.y - b2.y);
-      if (prevDist > 1 && dist > 1 && dist !== prevDist) {
-        this.zoomAtScreen((a2.x + b2.x) / 2, (a2.y + b2.y) / 2, dist / prevDist);
-      }
-    } else {
-      this.panPointers.set(e.pointerId, current);
     }
   }
 
   private onCanvasUp(e: PointerEvent): void {
-    this.panPointers.delete(e.pointerId);
+    this.panPointers.up(e.pointerId);
 
     if (this.pendingPartPress?.pointerId === e.pointerId) {
       // Short tap without move: select the part so Edit is available.
@@ -1071,7 +1082,7 @@ export class BuilderScene implements Scene {
   }
 
   private onCanvasCancel(e: PointerEvent): void {
-    this.panPointers.delete(e.pointerId);
+    this.panPointers.up(e.pointerId);
     if (this.pendingPartPress?.pointerId === e.pointerId) {
       this.clearPendingPartPress();
     }
@@ -1095,12 +1106,13 @@ export class BuilderScene implements Scene {
 
   /** Zoom keeping the world point under the cursor fixed. */
   private zoomAtScreen(screenX: number, screenY: number, factor: number): void {
-    const w = this.renderer.viewWidth;
-    const h = this.renderer.viewHeight;
-    const before = this.camera.screenToWorld(screenX, screenY, w, h);
-    this.camera.zoomBy(factor);
-    const after = this.camera.screenToWorld(screenX, screenY, w, h);
-    this.camera.center = this.camera.center.add(before.sub(after));
+    this.camera.zoomAtScreen(
+      screenX,
+      screenY,
+      factor,
+      this.renderer.viewWidth,
+      this.renderer.viewHeight,
+    );
   }
 
   private onKeyDown(e: KeyboardEvent): void {
@@ -1227,6 +1239,7 @@ export class BuilderScene implements Scene {
   }
 
   private onPointerUp(e: PointerEvent): void {
+    this.panPointers.up(e.pointerId);
     if (this.transformDrag) {
       const drag = this.transformDrag;
       this.transformDrag = null;
@@ -1295,11 +1308,16 @@ export class BuilderScene implements Scene {
     }
   }
 
-  private pointerToWorld(e: { clientX: number; clientY: number }) {
+  private canvasLocal(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const rect = this.renderer.canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  private pointerToWorld(e: { clientX: number; clientY: number }) {
+    const local = this.canvasLocal(e);
     return this.camera.screenToWorld(
-      e.clientX - rect.left,
-      e.clientY - rect.top,
+      local.x,
+      local.y,
       this.renderer.viewWidth,
       this.renderer.viewHeight,
     );

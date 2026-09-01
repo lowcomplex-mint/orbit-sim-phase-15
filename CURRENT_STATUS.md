@@ -1,16 +1,16 @@
 # Current Status
 
-**Version:** 0.2.0  
+**Version:** 0.2.1  
 Snapshot for handoff. Validated: `npm run build`, `npm run sim`,
-`npm run test:graph`, `npm run test:builder`, `npm run test:rotate`, and
-`npx tsx scripts/testSymmetry.ts` all pass.
+`npm run test:graph`, `npm run test:builder`, `npm run test:rotate`,
+`npm run test:gestures`, and `npx tsx scripts/testSymmetry.ts` all pass.
 
 Phases landed: MVP → persistent world → radial attachment → sandbox systems →
 recovery loop → **Phase 7 fractional VAB grid** → **Phase 8 deployable legs** →
 **Phase 9 tree/Move/Root scaffolding** → **Phase 10 recovery sim suite** →
 **Phase 11 node/attachment graph** → **Phase 12 VAB warnings + group ops** →
 **Phase 13 Rotate v2 + subassemblies** → **surface attach + clamp overhaul + SYM fixes**
-→ **leg outward-sign core-column fix** → **Phase 14 A–B mobile port (partial C layout)**.
+→ **leg outward-sign core-column fix** → **Phase 14 A–C mobile port** → **Phase 15 SFS chrome (finished 2026-09-01)**.
 
 Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
 (repo mirror: `documents/Grok additions/Handoff.md`).
@@ -63,16 +63,25 @@ Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
   `window.prompt`).
 - Select, Move, Root, Place, Snap, CoM, staging, BUILD CHECKS.
 
-## ✅ Phase 14 mobile (0.2.0)
+## ✅ Phase 14 mobile (0.2.1)
+
+Gestures, long-press settings, PWA files. See `MOBILE_AUDIT.md`.
+
+## ✅ Phase 15 visual overhaul (finished 2026-09-01, uncommitted)
+
+Hasan signed off the UI on-device (25069PTEBG).
 
 | Piece | Status |
 |-------|--------|
-| **A — Audit** | `MOBILE_AUDIT.md` (code-path + phone follow-up) |
-| **B — Touch controls** | Long-press + selection **Edit** for part settings; mobile bottom-sheet context menu; subassembly DOM modals; flight vessel-view pinch zoom |
-| **Layout (partial C)** | Scrollable VAB toolbars; compact ENGINEER/STAGING chips (capped expand); bottom part tray; palette **scroll vs drag** disambiguation |
-| **Plan** | `phase planning/phase-14-mobile-port-plan.md` |
-
-Still open for later Phase 14: full gesture-priority module, denser landscape QA, PWA (stretch).
+| Tokens | Black, square, hairline — `src/style.css` |
+| Hub | Simplified list; no gradient; **Add to Home Screen** |
+| VAB | `◄ KSC`; no FIT button; SYM glyph; divider; LOG `☰` in-bar |
+| Flight HUD | Ap/Pe top-left; Alt/Vel top-right; **Flight ▾** extras (`Pictures/mock up.png`) |
+| Dock | STAGE word; SAS caption; clock on warp |
+| Throttle | Custom vertical slider above the dock; hit zone slider→right edge (same Y) |
+| Map | FOLLOW/CENTER lower-left, map-only |
+| PWA | Pass-through SW; hub install. Chrome **tab** still shows URL/nav bars |
+| Plan | `phase planning/phase-15-visual-overhaul.md` |
 
 ## 🟡 Partial / stubbed
 
@@ -82,12 +91,13 @@ Still open for later Phase 14: full gesture-priority module, denser landscape QA
 - Subassemblies: localStorage only (no file export).
 - Rotate collision excludes mount parent (node-coincidence style).
 - Surface attach: lateral (L/R) flanks only; not full free-form on top/bottom.
-- Mobile: gesture priority still split across scenes (Phase 14 C).
+- Mobile: Phase D frame-budget profile not yet run on hardware.
+- Chrome-tab “empty rows” = browser chrome (URL bar + Android nav), not missing CSS.
 
 ## ❌ Not started
 
 - Hyperbolic rails; patched-conic map; RCS/docking; fairings; tutorial; audio.
-- Tracking Station rename/filter; subassembly file I/O polish; PWA.
+- Tracking Station rename/filter; subassembly file I/O polish.
 
 ## ⚠️ Gates
 
@@ -96,10 +106,13 @@ Still open for later Phase 14: full gesture-priority module, denser landscape QA
 | Graph / group / rotate / subassembly / SYM / surface | `test:graph` + `test:builder` + `test:rotate` (+ `testSymmetry`) |
 | Staging / rails / landing / clamps | `sim` |
 | Saves | optional fields only + `sim` |
-| Mobile UI only | manual phone / DevTools + `build` |
+| Gesture tracker math | `test:gestures` |
+| Mobile UI | `MOBILE_QA_CHECKLIST.md` + `build` |
 
 ## Recommended next
 
-1. Phase 14 C — unified gesture priority + landscape polish.
-2. Hyperbolic rails / patched conics.
-3. Leg deploy animation.
+1. Hyperbolic rails / patched-conic map.
+2. Leg deploy animation / tip-over.
+3. Subassembly file export polish.
+4. Phase 14 D — mobile frame-budget profile.
+5. Commit/push Phase 15 when ready.

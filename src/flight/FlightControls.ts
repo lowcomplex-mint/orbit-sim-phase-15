@@ -48,6 +48,7 @@ export class FlightControls {
 
   setThrottle(value: number): void {
     this.rocket.throttle = clamp(value, 0, 1);
+    this.onThrottleChanged?.(this.rocket.throttle);
   }
 
   update(dtSec: number): void {

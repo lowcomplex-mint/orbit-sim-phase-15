@@ -1,4 +1,27 @@
-/* Mobile-first UI. Touch targets are >= 48px; no hover-only affordances. */
+/* Phase 15 — SFS chrome. Sharp, black, hairline. Paint bars to the
+ * physical edge; pad *content* with safe-area so the notch isn't a gap.
+ */
+:root {
+  --bg: #000000;
+  --panel: #000000;
+  --panel-2: #111111;
+  --hairline: #2a2a2a;
+  --text: #eeeeee;
+  --muted: #888888;
+  --danger: #cc4444;
+  --radius: 0px;
+  --accent: #ffffff;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --hud-h: 22px;
+  --dock-h: 72px;
+  --throttle-w: 28px;
+  --navball-size: 60px;
+  /* Clearance between the dock's top edge and the throttle/navball. */
+  --rail-lift: 28px;
+  --vab-bar-h: 40px;
+  --palette-h: 104px;
+}
 
 * {
   box-sizing: border-box;
@@ -10,10 +33,12 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background: #05070f;
+  background: var(--bg);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-user-select: none;
   user-select: none;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 #app {
@@ -45,42 +70,86 @@ body {
 
 .btn {
   pointer-events: auto;
-  min-height: 48px;
-  min-width: 56px;
-  padding: 8px 14px;
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0 10px;
+  font-size: 13px;
   font-weight: 600;
-  color: #dbe6ff;
-  background: rgba(24, 34, 56, 0.85);
-  border: 1px solid #33436b;
-  border-radius: 10px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
 }
 
 .btn:active {
-  background: #2b3c63;
+  background: var(--panel-2);
+  border-color: var(--accent);
 }
 
 .btn.primary {
-  background: #2456b3;
-  border-color: #3f74d6;
+  background: var(--panel);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .btn.primary:active {
-  background: #2f66cc;
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn.active {
+  background: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .btn.small {
-  min-height: 36px;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.btn.icon {
+  width: 44px;
   min-width: 44px;
-  padding: 4px 10px;
-  font-size: 13px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .btn.hold {
-  font-size: 20px;
+  font-size: 18px;
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.sym-icon {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linejoin: miter;
+}
+
+.toolbar-rule {
+  width: 1px;
+  height: 24px;
+  flex: 0 0 1px;
+  background: var(--hairline);
+  pointer-events: none;
+  align-self: center;
 }
 
 .btn-row {
@@ -97,43 +166,126 @@ body {
 
 /* --- flight HUD --------------------------------------------------------- */
 
-.hud-top {
+.hud-flight {
   position: absolute;
-  top: calc(6px + env(safe-area-inset-top));
-  left: 6px;
-  right: 76px; /* keep clear of the LOG button */
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: center;
+  inset: 0;
   pointer-events: none;
+  z-index: 28;
 }
 
-.chip {
+.hud-ape {
+  position: absolute;
+  top: var(--safe-top);
+  left: 6px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 78px;
-  padding: 4px 8px;
-  background: rgba(10, 15, 30, 0.72);
-  border: 1px solid #2a3550;
-  border-radius: 8px;
+  gap: 0;
 }
 
-.chip .label {
+.hud-av {
+  position: absolute;
+  top: calc(var(--safe-top) + 76px);
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.hud-flight.is-more-open .hud-av {
+  top: calc(var(--safe-top) + 112px);
+}
+
+.hud-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  line-height: 1.15;
+}
+
+.hud-metric .label {
   font-size: 10px;
-  letter-spacing: 0.6px;
-  color: #8fa3c8;
+  color: var(--muted);
+  min-width: 1.6em;
 }
 
-.chip .value {
-  font-size: 13px;
-  color: #e8eefc;
+.hud-metric .value {
+  font-size: 12px;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* --- flight bottom bar --------------------------------------------------- */
+.hud-ape .hud-metric,
+.hud-av .hud-metric {
+  gap: 6px;
+}
+
+.hud-ape .hud-metric .label,
+.hud-av .hud-metric .label {
+  font-size: 12px;
+}
+
+.hud-ape .hud-metric .value,
+.hud-av .hud-metric .value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.hud-av .hud-metric .label {
+  text-align: right;
+}
+
+.hud-more {
+  position: absolute;
+  top: calc(var(--safe-top) + 40px);
+  left: 0;
+  right: 0;
+}
+
+.hud-more-toggle {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--text);
+  background: var(--panel);
+  border: none;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+}
+
+.hud-more-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 4px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--hairline);
+  pointer-events: auto;
+}
+
+.hud-more-body[hidden] {
+  display: none;
+}
+
+.hud-more-body .hud-log {
+  margin-left: auto;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 14px;
+}
+
+/* --- flight side rail + bottom dock -------------------------------------- */
 
 .bar-bottom {
   position: absolute;
@@ -142,10 +294,114 @@ body {
   bottom: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  gap: 0;
+  height: calc(var(--dock-h) + var(--safe-bottom));
+  min-height: calc(var(--dock-h) + var(--safe-bottom));
+  padding: 4px 4px 0;
+  padding-bottom: var(--safe-bottom);
+  background: var(--panel);
+  border-top: 1px solid var(--hairline);
   pointer-events: none;
+  z-index: 22;
+  overflow: visible;
+}
+
+.flight-ui .bar-bottom .btn-row {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.flight-ui .bar-bottom .btn-row::-webkit-scrollbar {
+  display: none;
+}
+
+.flight-ui .bar-bottom .btn {
+  min-height: 36px;
+  flex: 0 0 auto;
+}
+
+.flight-ui .bar-bottom .btn.icon {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.btn.dock-text {
+  min-width: 52px;
+  padding: 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+}
+
+.dock-labeled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+
+.dock-caption {
+  font-size: 8px;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.dock-clock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 10px;
+}
+
+.dock-pair {
+  display: flex;
+  gap: 2px;
+}
+
+.flight-side {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--dock-h) + var(--safe-bottom) + var(--rail-lift));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  pointer-events: none;
+  z-index: 23;
+}
+
+.map-side {
+  position: absolute;
+  left: 4px;
+  bottom: calc(var(--dock-h) + var(--safe-bottom) + var(--rail-lift));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+  z-index: 24;
+}
+
+.map-side[hidden] {
+  display: none;
+}
+
+.map-side .btn {
+  min-width: 72px;
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
 }
 
 .throttle-wrap {
@@ -156,36 +412,117 @@ body {
   max-width: 520px;
   margin: 0 auto;
   width: 100%;
-  padding: 6px 12px;
-  background: rgba(10, 15, 30, 0.65);
-  border: 1px solid #2a3550;
-  border-radius: 10px;
+  padding: 4px 8px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.throttle-wrap.throttle-vert {
+  flex-direction: column;
+  align-items: stretch;
+  width: 48px;
+  height: auto;
+  max-width: none;
+  margin: 0;
+  padding: 4px 0 6px;
+  gap: 0;
+  background: transparent;
+  border: none;
+}
+
+.throttle-hit {
+  position: relative;
+  width: 100%;
+  height: var(--navball-size);
+  flex: 0 0 var(--navball-size);
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.throttle-track {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  width: 18px;
+  height: 100%;
+  margin: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  pointer-events: none;
+}
+
+.throttle-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  background: #888;
+  pointer-events: none;
+}
+
+.throttle-thumb {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  transform: translate(-50%, 50%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .throttle-label {
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin-top: 10px;
+  margin-left: 8px;
+  width: 18px;
+  text-align: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.throttle-value {
   font-size: 11px;
-  letter-spacing: 0.6px;
-  color: #8fa3c8;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  min-height: 12px;
+  margin-left: 8px;
+  width: 18px;
+  text-align: center;
+  pointer-events: none;
 }
 
 input.throttle {
   flex: 1;
   height: 40px;
   touch-action: none;
-  accent-color: #3f74d6;
+  accent-color: var(--accent);
 }
 
 /* --- builder ------------------------------------------------------------- */
 
 .toolbar-top {
   position: absolute;
-  top: calc(6px + env(safe-area-inset-top));
-  left: 6px;
-  right: 76px;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   gap: 8px;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
   flex-wrap: wrap;
+  padding: 4px 6px;
+  padding-top: calc(4px + var(--safe-top));
+  background: var(--panel);
+  border-bottom: 1px solid var(--hairline);
   /* Children (buttons) re-enable hit testing; bar itself must not steal pans. */
   pointer-events: none;
   z-index: 30;
@@ -193,21 +530,36 @@ input.throttle {
 
 .toolbar-tools {
   position: absolute;
-  top: calc(58px + env(safe-area-inset-top));
-  left: 6px;
-  right: 6px;
+  top: calc(var(--safe-top) + var(--vab-bar-h));
+  left: 0;
+  right: 0;
   display: flex;
   gap: 6px;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
   flex-wrap: wrap;
+  background: var(--panel);
+  border-bottom: 1px solid var(--hairline);
   pointer-events: none;
   z-index: 30;
 }
 
+.toolbar-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  pointer-events: none;
+}
+
+.toolbar-cluster > * {
+  pointer-events: auto;
+}
+
 .btn.active {
-  background: #2a4570;
-  border-color: #4dff7a;
-  color: #d8ffe8;
+  background: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .hint {
@@ -234,10 +586,9 @@ input.throttle {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: rgba(10, 15, 30, 0.94);
-  border: 1px solid rgba(99, 212, 255, 0.45);
-  border-radius: 12px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   pointer-events: auto;
   z-index: 25;
 }
@@ -247,7 +598,7 @@ input.throttle {
 }
 
 .sel-count {
-  color: #63d4ff;
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
@@ -269,8 +620,8 @@ input.throttle {
   overscroll-behavior: contain;
   /* Vertical list on desktop: allow browser pan-y for scrolling. */
   touch-action: pan-y;
-  background: rgba(8, 12, 24, 0.82);
-  border-right: 1px solid #22304e;
+  background: var(--panel);
+  border-right: 1px solid var(--hairline);
   pointer-events: auto;
   z-index: 22;
 }
@@ -281,9 +632,9 @@ input.throttle {
   gap: 3px;
   min-height: 56px;
   padding: 8px;
-  background: rgba(24, 34, 56, 0.9);
-  border: 1px solid #33436b;
-  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   cursor: grab;
   /* Match palette scroll axis; drag starts after JS slop (see PartPalette). */
   touch-action: pan-y;
@@ -291,25 +642,25 @@ input.throttle {
 }
 
 .part-card:active {
-  background: #2b3c63;
+  background: #1a1a1a;
 }
 
 .part-card .swatch {
   width: 26px;
   height: 12px;
-  border-radius: 3px;
-  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 0;
+  border: 1px solid #000;
 }
 
 .part-card .part-name {
   font-size: 13px;
   font-weight: 600;
-  color: #e8eefc;
+  color: var(--text);
 }
 
 .part-card .part-stats {
   font-size: 11px;
-  color: #8fa3c8;
+  color: var(--muted);
 }
 
 /*
@@ -317,7 +668,7 @@ input.throttle {
  * stacked in a reserved right column, horizontal palette along the bottom.
  * Keep canvas free in the center.
  */
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) {
   .builder-ui .toolbar-top,
   .builder-ui .toolbar-tools {
     /* Must receive pointer events so overflow-x can scroll on touch. */
@@ -331,12 +682,13 @@ input.throttle {
     overscroll-behavior-x: contain;
     touch-action: pan-x;
     scrollbar-width: none;
-    gap: 6px;
+    gap: 8px;
     left: 0;
     right: 0;
-    padding: 4px 6px;
-    background: rgba(5, 8, 16, 0.88);
-    border-bottom: 1px solid #1c2740;
+    padding: 0 6px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--hairline);
+    min-height: var(--vab-bar-h);
   }
 
   .builder-ui .toolbar-top::-webkit-scrollbar,
@@ -347,26 +699,33 @@ input.throttle {
   }
 
   .builder-ui .toolbar-top {
-    top: env(safe-area-inset-top, 0px);
-    /* Leave room for the LOG button on the right. */
-    padding-right: 72px;
+    top: 0;
+    padding-top: var(--safe-top);
+    min-height: calc(var(--vab-bar-h) + var(--safe-top));
   }
 
   .builder-ui .toolbar-tools {
-    top: calc(env(safe-area-inset-top, 0px) + 48px);
+    top: calc(var(--safe-top) + var(--vab-bar-h));
+    right: 0;
   }
 
-  .builder-ui .toolbar-top > *,
-  .builder-ui .toolbar-tools > * {
+  .builder-ui .toolbar-cluster {
     flex: 0 0 auto;
   }
 
   .builder-ui .toolbar-top .btn,
   .builder-ui .toolbar-tools .btn {
-    min-height: 40px;
-    min-width: 44px;
-    padding: 6px 10px;
-    font-size: 13px;
+    min-height: var(--vab-bar-h);
+    min-width: 40px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .builder-ui .toolbar-top .btn.icon,
+  .builder-ui .toolbar-tools .btn.icon {
+    width: var(--vab-bar-h);
+    min-width: var(--vab-bar-h);
+    padding: 0;
   }
 
   .builder-ui .snap-controls {
@@ -383,14 +742,13 @@ input.throttle {
     display: none;
   }
 
-  /* Bottom part tray — horizontal scroll */
   .builder-ui .palette {
     top: auto;
     left: 0;
     right: 0;
-    bottom: env(safe-area-inset-bottom, 0px);
+    bottom: 0;
     width: auto;
-    height: 108px;
+    height: calc(var(--palette-h) + var(--safe-bottom));
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -399,16 +757,19 @@ input.throttle {
     overscroll-behavior-x: contain;
     touch-action: pan-x;
     border-right: none;
-    border-top: 1px solid #22304e;
+    border-top: 1px solid var(--hairline);
     padding: 6px 8px;
+    padding-bottom: calc(6px + var(--safe-bottom));
     gap: 6px;
     scrollbar-width: thin;
+    background: var(--panel);
   }
 
   .builder-ui .part-card {
-    min-width: 118px;
+    min-width: 128px;
     min-height: 0;
-    padding: 6px;
+    height: 100%;
+    padding: 8px;
     /* Horizontal pan scrolls the tray; drag when finger moves up into canvas. */
     touch-action: pan-x;
   }
@@ -417,7 +778,7 @@ input.throttle {
   .builder-ui .sel-toolbar {
     left: 6px;
     right: 6px;
-    bottom: calc(108px + 8px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--palette-h) + 8px + var(--safe-bottom));
     transform: none;
     max-width: none;
     width: auto;
@@ -443,13 +804,13 @@ input.throttle {
   }
 
   .builder-ui .eng-panel {
-    top: calc(env(safe-area-inset-top, 0px) + 100px);
+    top: calc(var(--safe-top) + (2 * var(--vab-bar-h)) + 4px);
     bottom: auto;
   }
 
   .builder-ui .staging-panel {
     top: auto;
-    bottom: calc(108px + 52px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--palette-h) + 48px + var(--safe-bottom));
   }
 
   .builder-ui .eng-panel.is-expanded,
@@ -486,9 +847,9 @@ input.throttle {
   max-height: calc(60vh - 120px);
   display: flex;
   flex-direction: column;
-  background: rgba(8, 12, 24, 0.85);
-  border: 1px solid #22304e;
-  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   overflow: hidden;
   pointer-events: auto;
 }
@@ -502,8 +863,8 @@ input.throttle {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 1px;
-  color: #8fa3c8;
-  background: rgba(24, 34, 56, 0.9);
+  color: var(--muted);
+  background: var(--panel-2);
   border: none;
   cursor: pointer;
 }
@@ -582,9 +943,9 @@ input.throttle {
   gap: 4px;
   pointer-events: auto;
   padding: 2px 6px;
-  background: rgba(24, 34, 56, 0.85);
-  border: 1px solid #22304e;
-  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
 }
 
 .snap-label {
@@ -608,10 +969,10 @@ input.throttle {
   padding: 2px 4px;
   font-size: 12px;
   font-weight: 600;
-  color: #dbe6ff;
-  background: rgba(16, 24, 42, 0.95);
-  border: 1px solid #2a3a5c;
-  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
 }
 
 /* --- procedural part steppers ------------------------------------------------ */
@@ -644,33 +1005,38 @@ input.throttle {
 .center-screen {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: 14px;
-  padding: 20px;
-  background: radial-gradient(ellipse at 50% 120%, #14213d 0%, #05070f 70%);
+  gap: 0;
+  padding: calc(24px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
+  background: var(--bg);
   pointer-events: auto;
 }
 
 .center-screen h1 {
-  margin: 0 0 4px;
-  font-size: clamp(22px, 5vw, 36px);
-  letter-spacing: 3px;
-  color: #e8eefc;
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: 4px;
+  font-weight: 700;
+  color: var(--text);
   text-align: center;
 }
 
 .center-subtitle {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: #8fa3c8;
+  margin: 0 0 20px;
+  font-size: 12px;
+  color: var(--muted);
   text-align: center;
 }
 
 .btn.big {
-  min-width: min(320px, 80vw);
-  min-height: 56px;
-  font-size: 17px;
+  min-width: 0;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto 1px;
+  min-height: 52px;
+  font-size: 16px;
+  border-radius: var(--radius);
 }
 
 .btn[disabled] {
@@ -737,9 +1103,9 @@ input.throttle {
   max-height: 86vh;
   overflow-y: auto;
   padding: 18px;
-  background: rgba(10, 15, 30, 0.97);
-  border: 1px solid #33436b;
-  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
 }
 
 .pause-panel.wide {
@@ -751,7 +1117,7 @@ input.throttle {
   text-align: center;
   font-size: 18px;
   letter-spacing: 2px;
-  color: #e8eefc;
+  color: var(--text);
 }
 
 .modal-body {
@@ -760,22 +1126,17 @@ input.throttle {
   gap: 8px;
 }
 
-.btn.danger {
-  border-color: #a04545;
-  color: #ffb3b3;
-}
-
 /* --- navball --------------------------------------------------------------- */
 
 .navball {
   position: absolute;
-  right: 10px;
-  bottom: 130px;
-  width: 104px;
-  height: 104px;
+  right: calc(var(--throttle-w) + 10px);
+  bottom: calc(var(--dock-h) + var(--safe-bottom) + var(--rail-lift));
+  width: var(--navball-size);
+  height: var(--navball-size);
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #1d2c4d 0%, #0a0f1e 75%);
-  border: 2px solid #33436b;
+  background: #0a0a0a;
+  border: 1px solid var(--hairline);
   pointer-events: none;
   z-index: 20;
 }
@@ -796,7 +1157,7 @@ input.throttle {
   position: absolute;
   top: 50%;
   left: 50%;
-  font-size: 14px;
+  font-size: clamp(10px, 3.2vmin, 14px);
   line-height: 1;
   transform: translate(-50%, -50%);
 }
@@ -821,27 +1182,21 @@ input.throttle {
 
 .nav-heading {
   color: #ffffff;
-  font-size: 16px;
+  font-size: clamp(12px, 3.6vmin, 18px);
   font-weight: 700;
 }
 
 .nav-readout {
   position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
-  font-size: 11px;
-  color: #e8eefc;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 720px) {
-  .navball {
-    right: 6px;
-    bottom: 190px;
-    width: 88px;
-    height: 88px;
-  }
+  pointer-events: none;
 }
 
 /* --- part context menu ------------------------------------------------------ */
@@ -854,9 +1209,9 @@ input.throttle {
   gap: 8px;
   min-width: 220px;
   padding: 10px;
-  background: rgba(10, 15, 30, 0.97);
-  border: 1px solid #33436b;
-  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   pointer-events: auto;
 }
 
@@ -882,11 +1237,11 @@ input.throttle {
 .ctx-slider {
   width: 100%;
   height: 28px;
-  accent-color: #3f74d6;
+  accent-color: var(--accent);
 }
 
 /* Mobile: dock part settings as a bottom sheet so they stay on-screen. */
-@media (max-width: 720px) {
+@media (max-width: 720px), (max-height: 500px) {
   .ctx-menu {
     left: 0 !important;
     right: 0 !important;
@@ -896,9 +1251,8 @@ input.throttle {
     min-width: 0;
     max-height: min(70vh, 520px);
     overflow-y: auto;
-    border-radius: 16px 16px 0 0;
+    border-radius: 0;
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -958,7 +1312,7 @@ input.throttle {
 .checkbox-row input {
   width: 20px;
   height: 20px;
-  accent-color: #3f74d6;
+  accent-color: var(--accent);
 }
 
 /* --- staging panel ----------------------------------------------------------- */
@@ -971,9 +1325,9 @@ input.throttle {
   max-height: 38vh;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 12, 24, 0.85);
-  border: 1px solid #22304e;
-  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   overflow: hidden;
   pointer-events: auto;
 }
@@ -1000,30 +1354,83 @@ input.throttle {
 /* --- tracking station extras -------------------------------------------------- */
 
 .vessel-row.active-vessel {
-  border-color: #3f74d6;
+  border-color: var(--accent);
 }
 
 /* --- flight engineer panel -------------------------------------------------- */
 
 .flight-eng {
   position: absolute;
-  top: 120px;
-  left: 6px;
-  width: 190px;
+  top: calc(var(--safe-top) + 76px);
+  left: 0;
+  width: 140px;
   max-height: calc(60vh - 130px);
   display: flex;
   flex-direction: column;
-  background: rgba(8, 12, 24, 0.85);
-  border: 1px solid #22304e;
-  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   overflow: hidden;
   pointer-events: auto;
 }
 
-@media (max-width: 720px) {
+.flight-ui:has(.hud-flight.is-more-open) .flight-eng {
+  top: calc(var(--safe-top) + 112px);
+}
+
+@media (max-width: 720px), (max-height: 500px) {
   .flight-eng {
-    top: 130px;
-    width: 168px;
+    width: min(140px, 38vw);
+  }
+}
+
+.flight-eng .eng-header {
+  cursor: grab;
+  touch-action: none;
+}
+
+.flight-eng.is-dragging {
+  z-index: 35;
+}
+
+.flight-eng.is-dragging .eng-header {
+  cursor: grabbing;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --hud-h: 28px;
+    --dock-h: 56px;
+    --throttle-w: 36px;
+    --navball-size: 56px;
+    --rail-lift: 16px;
+    --vab-bar-h: 36px;
+    --palette-h: 88px;
+  }
+
+  .bar-bottom .btn {
+    min-height: 40px;
+    min-width: 44px;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+
+  .throttle-wrap.throttle-vert {
+    height: min(160px, 48vh);
+  }
+
+  .flight-eng {
+    width: 148px;
+  }
+
+  .builder-ui .toolbar-top .btn,
+  .builder-ui .toolbar-tools .btn {
+    min-height: 36px;
+  }
+
+  .builder-ui .eng-panel.is-expanded,
+  .builder-ui .staging-panel.is-expanded {
+    max-height: min(120px, 38vh);
   }
 }
 
@@ -1070,13 +1477,6 @@ input.throttle {
 
 /* --- debug log ------------------------------------------------------------ */
 
-.log-toggle-btn {
-  position: absolute;
-  top: calc(6px + env(safe-area-inset-top));
-  right: 6px;
-  z-index: 40;
-}
-
 .log-panel[hidden] {
   display: none;
 }
@@ -1089,8 +1489,8 @@ input.throttle {
   width: min(420px, 94vw);
   display: flex;
   flex-direction: column;
-  background: rgba(5, 8, 16, 0.94);
-  border-left: 1px solid #22304e;
+  background: var(--panel);
+  border-left: 1px solid var(--hairline);
   z-index: 39;
   pointer-events: auto;
 }
@@ -1101,8 +1501,8 @@ input.throttle {
   gap: 8px;
   padding: 8px;
   padding-top: calc(8px + env(safe-area-inset-top));
-  border-bottom: 1px solid #22304e;
-  color: #e8eefc;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -1144,9 +1544,9 @@ input.throttle {
   padding: 10px 16px;
   font-size: 14px;
   color: #fff;
-  background: rgba(30, 41, 66, 0.95);
-  border: 1px solid #33436b;
-  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   z-index: 50;
   pointer-events: none;
 }

@@ -10,20 +10,10 @@ const MAX_ENTRIES = 200;
 export class DebugLog {
   private readonly panel: HTMLDivElement;
   private readonly entries: HTMLDivElement;
-  private readonly toggleBtn: HTMLButtonElement;
   private readonly toast: HTMLDivElement;
   private toastTimer: number | undefined;
 
   constructor(parent: HTMLElement, bus: EventBus<GameEvents>) {
-    this.toggleBtn = document.createElement('button');
-    this.toggleBtn.type = 'button';
-    this.toggleBtn.className = 'btn log-toggle-btn';
-    this.toggleBtn.textContent = 'LOG';
-    this.toggleBtn.addEventListener('click', () => {
-      this.toggle();
-      this.toggleBtn.blur();
-    });
-
     this.panel = document.createElement('div');
     this.panel.className = 'log-panel';
     this.panel.hidden = true;
@@ -54,7 +44,7 @@ export class DebugLog {
     this.toast.className = 'toast';
     this.toast.hidden = true;
 
-    parent.append(this.toggleBtn, this.panel, this.toast);
+    parent.append(this.panel, this.toast);
 
     bus.on('log', ({ level, message }) => this.add(level, message));
     this.hookGlobalErrors();

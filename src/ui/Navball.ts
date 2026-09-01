@@ -45,7 +45,14 @@ export class Navball {
   update(t: TelemetrySample): void {
     // Display angle: offset from radial-out, shown with 0 at 12 o'clock.
     // World angles are CCW-positive; CSS rotation is clockwise-positive.
-    const place = (el: HTMLSpanElement, worldAngle: number | null, radiusPx: number): void => {
+    // Radii scale with the ball so a smaller phone navball stays readable.
+    const radius = Math.max(28, this.root.clientWidth / 2);
+    const place = (
+      el: HTMLSpanElement,
+      worldAngle: number | null,
+      radiusPx: number,
+      keepUpright: boolean,
+    ): void => {
       if (worldAngle === null) {
         el.style.visibility = 'hidden';
         return;
@@ -53,26 +60,29 @@ export class Navball {
       el.style.visibility = 'visible';
       const delta = worldAngle - t.radialOutRad;
       const css = -delta;
-      el.style.transform =
-        `translate(-50%, -50%) rotate(${css}rad) translateY(${-radiusPx}px) rotate(${-css}rad)`;
+      // Prograde/radial glyphs stay screen-up so they stay readable. The
+      // heading chevron must NOT un-rotate — it points along the vessel nose.
+      el.style.transform = keepUpright
+        ? `translate(-50%, -50%) rotate(${css}rad) translateY(${-radiusPx}px) rotate(${-css}rad)`
+        : `translate(-50%, -50%) rotate(${css}rad) translateY(${-radiusPx}px)`;
     };
 
     for (const { el, kind } of this.markers) {
       switch (kind) {
         case 'prograde':
-          place(el, t.progradeRad, 34);
+          place(el, t.progradeRad, radius * 0.62, true);
           break;
         case 'retrograde':
-          place(el, t.progradeRad === null ? null : t.progradeRad + Math.PI, 34);
+          place(el, t.progradeRad === null ? null : t.progradeRad + Math.PI, radius * 0.62, true);
           break;
         case 'radialOut':
-          place(el, t.radialOutRad, 44);
+          place(el, t.radialOutRad, radius * 0.78, true);
           break;
         case 'radialIn':
-          place(el, t.radialOutRad + Math.PI, 44);
+          place(el, t.radialOutRad + Math.PI, radius * 0.78, true);
           break;
         case 'heading':
-          place(el, t.headingRad, 24);
+          place(el, t.headingRad, radius * 0.42, false);
           break;
       }
     }

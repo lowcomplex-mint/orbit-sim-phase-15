@@ -195,12 +195,22 @@ Interactive DevTools or a LAN phone pass should re-check rows marked `works` bef
 2. **Subassembly save/place** — `showTextPrompt` / `showListPicker` in `src/ui/ModalForms.ts` (no `window.prompt`).
 3. **Flight vessel-view zoom** — two-finger pinch on `FlightScene` when not in map mode.
 
-### Still open (Phase C+)
+### Closed in Phase C / E (v0.2.1)
 
-4. **Gesture priority** — still split across scenes; pinch mid part-drag still ignored; document/unify in Phase C.
-5. **Toolbar / panel density** on ~360px width — layout partial; Phase C.
-6. **PWA** — not started (stretch Phase E).
-7. **F3 debug** — no touch path (dev-only, low priority).
+4. **Gesture priority** — `src/ui/CanvasGestures.ts`. Two-finger pinch preempts pan, marquee, long-press, and group-move. Placement ghost stays; camera pinches under it.
+5. **Toolbar / panel density** — phone layout now also triggers at `max-height: 500px` (landscape phones); extra short-landscape HUD/tray/navball rules.
+6. **PWA** — manifest + icons + production service worker.
+7. **Flight ENGINEER** — header drag to move; tap to collapse.
+
+### Phone QA (2026-08-29, 25069PTEBG)
+
+Gestures: Hasan satisfied (`MOBILE_QA_CHECKLIST.md`). VAB usable; still a bit
+cluttered. Follow-up became **Phase 15** (finished 2026-09-01). Hasan satisfied with the UI.
+
+### Still open (Phase D+)
+
+8. **F3 debug** — no touch path (dev-only, low priority).
+9. **Phase D** — frame-budget profile on mid-tier Android.
 
 ### Explicit non-gaps (plan §0 was wrong or overstated)
 
@@ -229,4 +239,6 @@ Interactive DevTools or a LAN phone pass should re-check rows marked `works` bef
 
 ## One-line briefing
 
-> Most flight and VAB chrome already has touch buttons (including undo/redo); the hard mobile gaps are **context-menu part settings (zero working touch path)**, **subassembly `prompt` UX**, **flight zoom without map**, and **undefined multi-gesture priority** — not a greenfield control set.
+> Phase A–C + PWA + **Phase 15 chrome** shipped. Gestures OK. UI signed off
+> 2026-09-01. Remaining mobile work is Phase D (frame budget), not missing
+> touch paths.

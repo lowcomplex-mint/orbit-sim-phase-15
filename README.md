@@ -1,11 +1,12 @@
 # Orbit Simulator
 
 A 2D, mobile-first spaceflight simulator (inspired by KSP / Spaceflight
-Simulator, all-original code and assets). **v0.2.0.** Build a rocket on a
-strict grid, launch it, fly it to orbit around a fictional 1:10-scale Earth,
-warp to the Moon, reenter, and land. TypeScript + Vite + PixiJS, no backend,
-deterministic custom physics. Phone VAB: long-press / Edit for part settings,
-scrollable toolbars and parts tray.
+Simulator, all-original code and assets). **v0.2.1** + Phase 15 SFS chrome
+(finished).
+Build a rocket on a strict grid, launch it, fly it to orbit around a fictional
+1:10-scale Earth, warp to the Moon, reenter, and land. TypeScript + Vite +
+PixiJS. Phone: long-press part settings, black/square HUD. Add to Home Screen
+from the hub (Chrome tab keeps its URL bar).
 
 For a precise breakdown of what works vs. what is stubbed, see
 [CURRENT_STATUS.md](CURRENT_STATUS.md). For the developer-facing system map,
@@ -35,6 +36,7 @@ npm run sim           # headless physics / recovery / rails / clamps / legs
 npm run test:graph    # attachment graph / tree (node + surface edges)
 npm run test:builder  # Phase 12 selection, group-op, and warning checks
 npm run test:rotate   # Phase 13 rotate v2 + subassemblies
+npm run test:gestures # Phase 14 C pan/pinch tracker math
 npx tsx scripts/testSymmetry.ts   # SYM mirror placement
 ```
 
@@ -48,7 +50,7 @@ rails warp, landing-strut touchdown, and launch-clamp hold/release.
 | Input | Action |
 | --- | --- |
 | Drag from palette / placed part | Place / move (node snap **or** surface flush for legs/utility/clamps) |
-| Drag empty space · wheel / pinch | Pan / zoom the editor camera |
+| Drag empty space · wheel / pinch | Pan / zoom the editor camera. Two fingers always pinch-zoom (cancels marquee / long-press / group-move; placement ghost stays) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | Select tool or `Shift`+drag | Box-select parts (`Shift`+click toggles) |
 | Move tool + drag selected part | Move selected subtrees as one rigid group |
@@ -63,6 +65,7 @@ rails warp, landing-strut touchdown, and launch-clamp hold/release.
 | `G` / SAS button | Cycle SAS: stability / prograde / retrograde / off |
 | `Space` / STAGE | Fire next stage (spent stage becomes a persistent vessel) |
 | 🪂 / LEGS / `L` | Arm parachutes / deploy or stow all landing struts (`L` in flight only) |
+| ENGINEER header | Tap to collapse; drag to reposition (clamped on-screen) |
 | `M` / MAP | Map view (pan by dragging, pinch/wheel zoom, FOLLOW/CENTER, Ap/Pe markers); vessel view also pinches |
 | `,` / `.` or ◄◄ ►► | Time warp: 1–4x physics, 10–1000x rails (bound vacuum arcs, Earth or Moon) |
 | `Esc` / ⏸ | Pause menu (resume, reverts, scene exits, quicksave/-load) |
@@ -87,7 +90,8 @@ src/
   flight/    flight scene, controls, cameras, telemetry (dominant-relative)
   center/    Space Center hub (settings, saved games) and Tracking Station
   render/    PixiJS renderers: bodies, parts, vessel views, orbits, effects
-  ui/        HUD, navball, engineer panel, pause menu, dialogs, debug overlay
+  ui/        HUD, navball, engineer panel, pause menu, dialogs, debug overlay,
+             CanvasGestures (shared pan/pinch tracker + gesture priority)
   storage/   SaveSystem (blueprints + rotating game-save slots), Settings
   future/    HabitationSystem (documented placeholder)
 scripts/

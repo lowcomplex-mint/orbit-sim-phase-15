@@ -1,6 +1,7 @@
 import type { GameContext, Scene } from '../app/GameState';
 import { clampDebris, saveSettings } from '../storage/Settings';
 import { MANUAL_SLOTS, type SaveSlotId } from '../storage/SaveSystem';
+import { isStandalone, onPwaInstallChange, promptInstall } from '../ui/PwaInstall';
 
 /** Navigation + save/load actions provided by GameApp. */
 export interface SpaceCenterActions {
@@ -21,6 +22,8 @@ export interface SpaceCenterActions {
 export class SpaceCenterScene implements Scene {
   private uiRoot!: HTMLDivElement;
   private modal: HTMLDivElement | null = null;
+  private installBtn: HTMLButtonElement | null = null;
+  private unsubInstall: (() => void) | null = null;
 
   constructor(
     private readonly ctx: GameContext,
@@ -32,44 +35,66 @@ export class SpaceCenterScene implements Scene {
     this.uiRoot.className = 'scene-ui center-screen';
 
     const title = document.createElement('h1');
-    title.textContent = 'ORBIT SPACE CENTER';
+    title.textContent = 'ORBIT SIM';
     const subtitle = document.createElement('p');
     subtitle.className = 'center-subtitle';
     const career = this.ctx.career.state;
     subtitle.textContent =
       `Funds ${Math.round(career.funds).toLocaleString('en-US')} · ` +
-      `Science ${career.science} · Reputation ${career.reputation} · ` +
-      `Milestones ${Object.keys(career.milestones).length}`;
+      `Science ${career.science} · Rep ${career.reputation}`;
 
-    const resumeBtn = this.bigButton('Resume Active Flight', () => this.actions.resumeFlight());
+    const resumeBtn = this.bigButton('Resume', () => this.actions.resumeFlight());
     if (!this.ctx.session) {
       resumeBtn.disabled = true;
       resumeBtn.title = 'No flight in progress';
     }
 
-    const missionControlBtn = this.bigButton('Mission Control', () => {
-      this.ctx.log('info', 'Mission Control: contracts are TODO (career foundations exist).');
+    this.installBtn = this.bigButton('Add to Home Screen', () => {
+      void this.onInstallClick();
     });
-    missionControlBtn.disabled = true;
-    missionControlBtn.title = 'Contracts / career mode — foundations in place, gameplay TODO';
+    this.refreshInstallBtn();
+    this.unsubInstall = onPwaInstallChange(() => this.refreshInstallBtn());
 
     this.uiRoot.append(
       title,
       subtitle,
-      this.bigButton('VAB / Editor', () => this.actions.openBuilder()),
-      this.bigButton('Launchpad', () => this.actions.launchCurrentDesign()),
-      this.bigButton('Tracking Station', () => this.actions.openTrackingStation()),
+      this.bigButton('VAB', () => this.actions.openBuilder()),
+      this.bigButton('Launch', () => this.actions.launchCurrentDesign()),
+      this.bigButton('Tracking', () => this.actions.openTrackingStation()),
       resumeBtn,
-      this.bigButton('Saved Games', () => this.openSavesModal()),
+      this.bigButton('Saves', () => this.openSavesModal()),
       this.bigButton('Settings', () => this.openSettingsModal()),
-      missionControlBtn,
+      this.installBtn,
     );
     document.getElementById('ui-root')!.appendChild(this.uiRoot);
   }
 
   exit(): void {
+    this.unsubInstall?.();
+    this.unsubInstall = null;
     this.closeModal();
     this.uiRoot.remove();
+  }
+
+  private refreshInstallBtn(): void {
+    if (!this.installBtn) return;
+    this.installBtn.hidden = isStandalone();
+  }
+
+  private async onInstallClick(): Promise<void> {
+    const outcome = await promptInstall();
+    if (outcome === 'accepted') {
+      this.ctx.log('info', 'Orbit Sim added to the home screen.');
+      return;
+    }
+    const body = this.openModal('ADD TO HOME SCREEN');
+    const p = document.createElement('p');
+    p.className = 'confirm-text';
+    p.textContent =
+      'Chrome menu (the ⋮ at the top right) → Add to Home screen / Install app. ' +
+      'That hides the URL bar so the game can use the full screen. ' +
+      'The shortcut only works while this USB/dev server is up.';
+    body.appendChild(p);
   }
 
   update(_dtSec: number): void {

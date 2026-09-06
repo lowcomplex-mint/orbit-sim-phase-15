@@ -1,6 +1,10 @@
 # Phase 15 — Visual overhaul (SFS chrome)
 
-**Status:** **Finished.** Hasan satisfied with the UI 2026-09-01 (25069PTEBG). Defaults used: Default stays on VAB bar; Resume shown disabled; dock is icons only (STAGE kept as a word).  
+**Status:** **Finished and committed** (`0ff4ee0`, v0.2.1). Hasan satisfied
+with the UI 2026-09-01 (25069PTEBG). **Do not re-execute this plan.** Chrome
+is frozen. Next work: `HANDOFF.md` §7 (hyperbolic rails / patched conics).
+Defaults used: Default stays on VAB bar; Resume shown disabled; dock is icons
+only (STAGE kept as a word).  
 **Audience:** Grok (executor), Hasan (owner)  
 **Depends on:** v0.2.1 Phase 14 C + 2026-08-29 phone QA (gestures accepted; chrome pinned)  
 **Device truth:** `25069PTEBG`, 1280×2772 @ 3.25 → **~394×853 CSS**, notch **~47px**. All layout numbers below are for that viewport unless noted.
@@ -194,6 +198,6 @@ Answer these if you care; otherwise the spec above is the default.
 
 ## One-line briefing
 
-> Phase 15 **shipped** (uncommitted): SFS-like sharp black chrome, mockup HUD, custom
-> throttle with a right-edge hit zone. Hasan signed off 2026-09-01. Next gameplay
-> phase: hyperbolic rails / patched conics.
+> Phase 15 **shipped in `0ff4ee0`:** SFS-like sharp black chrome, mockup HUD,
+> custom throttle with a right-edge hit zone. Hasan signed off 2026-09-01.
+> Next gameplay phase: hyperbolic rails / patched conics (`HANDOFF.md`).

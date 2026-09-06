@@ -1,19 +1,24 @@
 # Current Status
 
 **Version:** 0.2.1  
-Snapshot for handoff. Validated: `npm run build`, `npm run sim`,
-`npm run test:graph`, `npm run test:builder`, `npm run test:rotate`,
-`npm run test:gestures`, and `npx tsx scripts/testSymmetry.ts` all pass.
+**Repo:** https://github.com/lowcomplex-mint/orbit-sim-phase-15  
+**Code tip:** `0ff4ee0` (Phase 14 C + Phase 15 chrome). Docs snapshot 2026-09-06.  
+**Agent brief:** `HANDOFF.md` (read that first; do not reconstruct status from the tree).
+
+Validated: `npm run build`, `npm run sim`, `npm run test:graph`,
+`npm run test:builder`, `npm run test:rotate`, `npm run test:gestures`,
+and `npx tsx scripts/testSymmetry.ts` all pass.
 
 Phases landed: MVP → persistent world → radial attachment → sandbox systems →
 recovery loop → **Phase 7 fractional VAB grid** → **Phase 8 deployable legs** →
 **Phase 9 tree/Move/Root scaffolding** → **Phase 10 recovery sim suite** →
 **Phase 11 node/attachment graph** → **Phase 12 VAB warnings + group ops** →
 **Phase 13 Rotate v2 + subassemblies** → **surface attach + clamp overhaul + SYM fixes**
-→ **leg outward-sign core-column fix** → **Phase 14 A–C mobile port** → **Phase 15 SFS chrome (finished 2026-09-01)**.
+→ **leg outward-sign core-column fix** → **Phase 14 A–C mobile port** →
+**Phase 15 SFS chrome (finished and signed off 2026-09-01, committed in `0ff4ee0`)**.
 
-Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
-(repo mirror: `documents/Grok additions/Handoff.md`).
+Master handoff: `HANDOFF.md` (mirrors: `documents/Grok additions/Handoff.md`,
+`/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`).
 
 ---
 
@@ -62,42 +67,49 @@ Master handoff: `/home/hasan/Documents/Grok projects/Orbit-sim/Handoff.md`
 - **Subassemblies:** SUB+ / SUB… / selection SUB (localStorage; DOM modals, not
   `window.prompt`).
 - Select, Move, Root, Place, Snap, CoM, staging, BUILD CHECKS.
+- Phone bar: `◄ KSC`; no FIT button; SYM mirror glyph; LOG `☰` in-bar; Default kept.
 
 ## ✅ Phase 14 mobile (0.2.1)
 
-Gestures, long-press settings, PWA files. See `MOBILE_AUDIT.md`.
+Gestures, long-press settings, PWA files. See `MOBILE_AUDIT.md` (historical
+audit) and `MOBILE_QA_CHECKLIST.md` (living sheet). Hasan signed gestures off
+2026-08-29 on `25069PTEBG`.
 
-## ✅ Phase 15 visual overhaul (finished 2026-09-01, uncommitted)
+## ✅ Phase 15 visual overhaul (finished 2026-09-01, in `0ff4ee0`)
 
-Hasan signed off the UI on-device (25069PTEBG).
+Hasan signed off the UI on-device (`25069PTEBG`). **Chrome is frozen.**
 
 | Piece | Status |
 |-------|--------|
 | Tokens | Black, square, hairline — `src/style.css` |
 | Hub | Simplified list; no gradient; **Add to Home Screen** |
 | VAB | `◄ KSC`; no FIT button; SYM glyph; divider; LOG `☰` in-bar |
-| Flight HUD | Ap/Pe top-left; Alt/Vel top-right; **Flight ▾** extras (`Pictures/mock up.png`) |
+| Flight HUD | Ap/Pe top-left; Alt/Vel top-right; **Flight ▾** extras |
 | Dock | STAGE word; SAS caption; clock on warp |
 | Throttle | Custom vertical slider above the dock; hit zone slider→right edge (same Y) |
 | Map | FOLLOW/CENTER lower-left, map-only |
 | PWA | Pass-through SW; hub install. Chrome **tab** still shows URL/nav bars |
-| Plan | `phase planning/phase-15-visual-overhaul.md` |
+| Plan | `phase planning/phase-15-visual-overhaul.md` (shipped — do not re-execute) |
 
 ## 🟡 Partial / stubbed
 
 - Resources (electricity only); maneuver nodes data-only.
-- Map: single-body conic.
+- Map: single-body conic (hyperbola *drawing* exists; no patched continuation).
 - Legs: no deploy animation / suspension / tip-over.
 - Subassemblies: localStorage only (no file export).
 - Rotate collision excludes mount parent (node-coincidence style).
 - Surface attach: lateral (L/R) flanks only; not full free-form on top/bottom.
 - Mobile: Phase D frame-budget profile not yet run on hardware.
 - Chrome-tab “empty rows” = browser chrome (URL bar + Android nav), not missing CSS.
+- SOI: dominant body used for collision/atm/telemetry/rails capture; world frame
+  is still Earth-origin. Moon is not a true primary yet.
 
 ## ❌ Not started
 
-- Hyperbolic rails; patched-conic map; RCS/docking; fairings; tutorial; audio.
-- Tracking Station rename/filter; subassembly file I/O polish.
+- **Hyperbolic / near-parabolic rails** (Phase 16a).
+- **Patched-conic map** / `CelestialFrame` (Phase 16b–c).
+- RCS/docking; fairings; tutorial; audio.
+- Tracking Station rename/filter; subassembly file I/O polish; native APK.
 
 ## ⚠️ Gates
 
@@ -111,8 +123,10 @@ Hasan signed off the UI on-device (25069PTEBG).
 
 ## Recommended next
 
-1. Hyperbolic rails / patched-conic map.
+1. **Phase 16 — hyperbolic rails / patched-conic map** (see `HANDOFF.md` §7).
 2. Leg deploy animation / tip-over.
 3. Subassembly file export polish.
 4. Phase 14 D — mobile frame-budget profile.
-5. Commit/push Phase 15 when ready.
+
+Do **not** restyle Phase 15 chrome. Push `grok-era`
+(`lowcomplex-mint/orbit-sim-phase-15`), not `origin`.

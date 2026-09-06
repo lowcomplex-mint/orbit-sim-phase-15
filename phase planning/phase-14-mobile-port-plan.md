@@ -1,10 +1,11 @@
 # Phase 14 — Mobile Port Plan
 
 **Status:** Phase A–C complete (gesture-priority module, landscape, PWA
-stretch). Shipped in **v0.2.1**. **On-device QA 2026-08-29** (25069PTEBG):
-gestures accepted; flight chrome **pinned** (better, not signed off). Phase D
-(performance profile) still open. Do not iterate HUD/navball/throttle without
-a Hasan mockup.
+stretch). Shipped in **v0.2.1** (`4b481c0` A–B, `0ff4ee0` C). **On-device QA
+2026-08-29** (25069PTEBG): gestures accepted. Flight chrome was **pinned**
+here, then **signed off in Phase 15** (2026-09-01) — do not iterate
+HUD/navball/throttle. Phase D (performance profile) still open.
+**Current brief:** `HANDOFF.md`. This file is the shipped mobile-port plan.
 **Audience:** Grok (executor), Hasan (owner), Claude (planner/reviewer)
 **Depends on:** Phase 13 tip (surface attach + clamp overhaul + SYM fixes), per Handoff.md
 
@@ -41,7 +42,7 @@ following already exist as on-screen UI (not just keyboard bindings):
 | VAB undo/redo | **↶ / ↷ toolbar buttons** (Ctrl+Z/Y are shortcuts only) |
 | VAB rotate | Rotate tool + ↺ / ↻ + Rot step control |
 | VAB subassembly | SUB+ / SUB… / selection SUB buttons (see gaps for `prompt` UX) |
-| VAB camera | Empty-canvas pan + pinch zoom; FIT button |
+| VAB camera | Empty-canvas pan + pinch zoom; FIT button *(removed from the bar in Phase 15; `fitView()` still runs on enter)* |
 | Viewport / page zoom | `index.html` viewport meta (`user-scalable=no`, `viewport-fit=cover`); canvas `touch-action: none`; button `touch-action: manipulation`; partial `safe-area-inset-*` |
 
 **Do not rebuild any of the above.** Phase B+ should wire missing affordances
@@ -61,7 +62,8 @@ only, and re-verify “works” rows on a real device or DevTools emulation.
    keyboard-only, which is fine.)
 3. **Phase 13 after mobile polish — mixed.** Rotate v2 and surface-attach snap
    ride existing touch tools/drag. SUB+/SUB…/SUB buttons exist but library
-   save/place uses **`window.prompt`** (partial / poor mobile UX). **Clamp
+   save/place used **`window.prompt`** at audit time (closed in Phase 14 B via
+   `ModalForms.ts`). **Clamp
    overhaul settings** still live only in the context menu → same gap as (1).
 4. **Debug overlay (`F3`)** — keyboard only, low priority. **LOG** has a
    button; `L` in flight is LEGS (button covers). No accidental touch
@@ -70,13 +72,12 @@ only, and re-verify “works” rows on a real device or DevTools emulation.
    `touch-action` + safe-area). Remaining Phase C work is layout density,
    notch QA, and any residual browser chrome (e.g. pull-to-refresh) not
    covered by current CSS. In-canvas pinch already exists in VAB + map;
-   **flight vessel-view zoom is still wheel-only** (no pinch).
-6. **PWA manifest / installability** — still absent; strong offline/PWA
-   candidate, nothing built yet (stretch Phase E).
-7. **No centralized gesture disambiguation** — pan vs part-drag vs marquee
-   vs pinch vs (future) long-press still split across `BuilderScene` and
-   `MapCameraController`. Place pickup has no long-press window; pinch mid
-   part-drag is ignored while `this.drag` is set.
+   **flight vessel-view zoom was wheel-only at audit time** (pinch added in Phase 14 B).
+6. **PWA manifest / installability** — **closed in Phase 14 C/E**
+   (`public/manifest.json`, pass-through `public/sw.js`, hub Add to Home Screen).
+7. **No centralized gesture disambiguation** — **closed in Phase 14 C**
+   (`src/ui/CanvasGestures.ts`). Two-finger pinch preempts pan / marquee /
+   long-press / group-move.
 
 ### Explicit non-goals for this phase
 

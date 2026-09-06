@@ -1,5 +1,9 @@
 # Next Phase Plan — Reviewed & Revised
 
+> **Historical (2026-07-12).** Phase 10 (recovery sim) and Phase 11 (node
+> graph) **shipped**. Rotate was later enabled in Phase 13. **Do not
+> implement from this file.** Current brief: **`HANDOFF.md`**.
+
 **Reviewing:** `next-phase-ideas.md` (Grok, 2026-07-12)
 **Verdict:** the diagnosis is right, the sequencing needs one swap, and the node overhaul needs to be scoped tighter before anyone starts it.
 

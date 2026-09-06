@@ -1,5 +1,8 @@
 # Phase 11 — Node / attachment overhaul
 
+> **Historical. Shipped.** Rotate v2 later landed in Phase 13. Current brief:
+> **[`HANDOFF.md`](../../HANDOFF.md)**.
+
 **Status:** complete (2026-07-12)  
 **Pivot spec:** `phase planning/phase-11-pivot-rules.md`  
 **Graph tests:** `npm run test:graph`  

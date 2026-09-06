@@ -1,9 +1,15 @@
 # Phase A — Mobile touch audit
 
+> **Historical snapshot (2026-07-25)** with closure notes through Phase 15.
+> Touch gaps in §1–5 were closed in Phase 14 B/C. Phase 15 restyled chrome
+> (FIT removed from the VAB bar; LOG is in-bar `☰`; custom throttle, not a
+> native range). **Do not re-audit this file as if it were current.**
+> Living status: **`HANDOFF.md`**.
+
 **Date:** 2026-07-25 (audit); layout/palette follow-ups through 2026-07-30  
-**Shipped in:** **v0.2.0**  
-**Scope:** Phase A inventory. Phase B + partial layout C closed many rows (see §6).  
-**Code tip:** Phase 13 + surface attach + clamps + SYM + Phase 14 mobile UI.  
+**Shipped in:** **v0.2.0** (A–B); Phase C + PWA in **v0.2.1** (`0ff4ee0`)  
+**Scope:** Phase A inventory. Phase B + C + 15 closed the remaining rows (see §6).  
+**Code tip:** `0ff4ee0` (Phase 14 C + Phase 15).  
 **Docs read:** master Handoff.md, ARCHITECTURE.md, README.md, CURRENT_STATUS.md, phase-14 plan.
 
 ---
@@ -17,7 +23,7 @@
 | **Confidence** | **High** for “no touch path” and “has on-screen control” (deterministic wiring). **Medium** for “works” on DOM buttons (inferred from `click` / `pointer` + existing mobile CSS; not finger-tested). |
 | **Dev server** | Vite metadata suggested `http://localhost:5173/`; this environment could not HTTP-confirm a live session. |
 
-Interactive DevTools or a LAN phone pass should re-check rows marked `works` before treating Phase A as hardware-signed-off. **Do not start Phase B until Hasan/Claude review this list** (per the phase plan).
+Interactive DevTools or a LAN phone pass should re-check rows marked `works` before treating Phase A as hardware-signed-off. **(Superseded: Phase B–C and Phase 15 all shipped. Hasan signed UI off 2026-09-01.)**
 
 ### Status legend
 
@@ -104,7 +110,7 @@ Interactive DevTools or a LAN phone pass should re-check rows marked `works` bef
 | DEL (selection toolbar) | works | | `src/builder/BuilderScene.ts` |
 | Ctrl+D / Delete keys | no touch path | DUP/DEL cover | `src/builder/BuilderScene.ts` |
 | Snap step UI | works | | `src/builder/SnapControls.ts` |
-| FIT / Clear / Default / Save / Load / LAUNCH | works | | `src/builder/BuilderScene.ts` |
+| FIT / Clear / Default / Save / Load / LAUNCH | works *(FIT later removed from the bar in Phase 15)* | | `src/builder/BuilderScene.ts` |
 | ◄ KSC | works | | `src/builder/BuilderScene.ts` |
 
 ### 2b. Phase 13 + post-12 features (Handoff §3)
@@ -122,7 +128,7 @@ Interactive DevTools or a LAN phone pass should re-check rows marked `works` bef
 
 ### 2c. Right-click context menus (priority audit item)
 
-`PartContextMenu` file comment claims “Right-click (or long-press)”. **Long-press is not implemented.** Menu opens only from canvas `contextmenu` (`BuilderScene.onContextMenu`). Place-tool `pointerdown` on a part (button 0 / touch) **immediately removes the part and starts a drag**; if a browser later fires `contextmenu`, `if (this.drag) return` blocks the menu.
+`PartContextMenu` file comment claims “Right-click (or long-press)”. **At audit time long-press was not implemented** (closed in Phase 14 B: long-press + selection **Edit** + bottom sheet). Audit-time behavior: menu opened only from canvas `contextmenu`; Place-tool `pointerdown` on a part immediately picked it up.
 
 | Item | Status | Notes | Owner file(s) |
 |------|--------|-------|----------------|
@@ -168,8 +174,8 @@ Interactive DevTools or a LAN phone pass should re-check rows marked `works` bef
 | Buttons `touch-action: manipulation`, min ~48px height | works | Touch-first UI helpers | `src/style.css`, `src/ui/Buttons.ts` |
 | `safe-area-inset-*` on HUD / bars / toolbars | works (partial) | Applied in several places; full notch QA still Phase C | `src/style.css` |
 | Mobile VAB layout (`max-width: 720px` bottom palette) | works | Phase 12 “mobile VAB polish” | `src/style.css` |
-| PWA `manifest.json` / service worker | no touch path / not started | No installability | (none) |
-| Centralized gesture disambiguation module | no touch path / not started | Logic split: `BuilderScene` pan/pinch vs `MapCameraController` | `src/builder/BuilderScene.ts`, `src/flight/MapCameraController.ts` |
+| PWA `manifest.json` / service worker | **closed in Phase 14 C/E** | `public/manifest.json` + pass-through `public/sw.js` | `src/ui/PwaInstall.ts` |
+| Centralized gesture disambiguation module | **closed in Phase 14 C** | `src/ui/CanvasGestures.ts` | `src/ui/CanvasGestures.ts` |
 
 ---
 
@@ -239,6 +245,6 @@ cluttered. Follow-up became **Phase 15** (finished 2026-09-01). Hasan satisfied 
 
 ## One-line briefing
 
-> Phase A–C + PWA + **Phase 15 chrome** shipped. Gestures OK. UI signed off
-> 2026-09-01. Remaining mobile work is Phase D (frame budget), not missing
-> touch paths.
+> Phase A–C + PWA + **Phase 15 chrome** shipped in `0ff4ee0`. Gestures OK.
+> UI signed off 2026-09-01. Remaining mobile work is Phase D (frame budget),
+> not missing touch paths. Current brief: `HANDOFF.md`.

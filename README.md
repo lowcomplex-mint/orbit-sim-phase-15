@@ -1,8 +1,15 @@
 # Orbit Simulator
 
 A 2D, mobile-first spaceflight simulator (inspired by KSP / Spaceflight
-Simulator, all-original code and assets). **v0.2.1** + Phase 15 SFS chrome
-(finished).
+Simulator, all-original code and assets). **v0.2.1** — Phase 15 SFS chrome
+**finished and signed off**.
+
+**Incoming agent (no context):** read **[HANDOFF.md](HANDOFF.md)** and stop.
+That file is the signed brief (where the code is, what is frozen, what to
+build next, gates, gotchas). Do not reconstruct status by grepping the tree.
+
+GitHub: https://github.com/lowcomplex-mint/orbit-sim-phase-15
+
 Build a rocket on a strict grid, launch it, fly it to orbit around a fictional
 1:10-scale Earth, warp to the Moon, reenter, and land. TypeScript + Vite +
 PixiJS. Phone: long-press part settings, black/square HUD. Add to Home Screen
@@ -10,8 +17,7 @@ from the hub (Chrome tab keeps its URL bar).
 
 For a precise breakdown of what works vs. what is stubbed, see
 [CURRENT_STATUS.md](CURRENT_STATUS.md). For the developer-facing system map,
-see [ARCHITECTURE.md](ARCHITECTURE.md). The latest continuation notes live in
-[HANDOFF.md](HANDOFF.md).
+see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Requirements
 
@@ -170,7 +176,10 @@ and physics in `src/vehicle/LandingLegs.ts`.
 
 The launch → orbit → Moon → reenter → land loop works, including procedural
 parachutes, LT-2-style landing struts with foot contact, launch clamps,
-electricity, Moon-relative rails warp, graph-safe VAB multi-selection, and
-Phase 14 mobile touch paths (see [MOBILE_AUDIT.md](MOBILE_AUDIT.md)). See
-[CURRENT_STATUS.md](CURRENT_STATUS.md) for the full done/partial/stubbed
-breakdown and the recommended next development phase.
+electricity, Moon-relative rails warp, graph-safe VAB multi-selection,
+Phase 14 mobile touch paths, and Phase 15 SFS chrome (Hasan signed off the
+UI on-device). Chrome is frozen.
+
+**Next gameplay:** hyperbolic rails / patched-conic map (Phase 16). Details
+and file map: [HANDOFF.md](HANDOFF.md). Short list:
+[CURRENT_STATUS.md](CURRENT_STATUS.md).

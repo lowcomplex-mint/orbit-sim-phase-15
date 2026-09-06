@@ -1,5 +1,8 @@
 # Phase 10 — Recovery sim suite
 
+> **Historical. Shipped.** Do not re-run this as a work order. Current brief:
+> **[`HANDOFF.md`](../../HANDOFF.md)**.
+
 **Status:** complete (2026-07-12)  
 **Regression:** `npm run sim` — blocks `== Parachutes ==`, `== Launch clamps ==`, `== Electricity ==`, `== Full recovery mission ==`
 

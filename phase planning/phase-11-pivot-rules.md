@@ -1,7 +1,11 @@
 # Phase 11 — Pivot rules & attachment semantics (Step 0)
 
-**Status:** locked before implementation (2026-07-12)  
-**Scope:** defines how Move / Root / (future) Rotate v2 interpret geometry. Rotate stays **disabled** in the VAB until Phase 13.
+> **Historical spec.** Phase 11 graph **shipped**; Phase 13 **enabled Rotate
+> v2** (no longer disabled). Do not treat “Rotate stays disabled” as current.
+> Living status: **`HANDOFF.md`**.
+
+**Status:** locked before implementation (2026-07-12); executed in Phases 11 and 13.  
+**Scope:** defines how Move / Root / Rotate v2 interpret geometry. Rotate stayed **disabled** in the VAB until Phase 13 (now shipped — `npm run test:rotate`).
 
 ---
 

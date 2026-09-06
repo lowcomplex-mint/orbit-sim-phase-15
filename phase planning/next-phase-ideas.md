@@ -1,5 +1,10 @@
 # Next Phase Ideas & Part-Manipulation Status
 
+> **Historical planning (2026-07-12).** Phases 10–15 have **shipped**. Rotate
+> v2, subassemblies, group ops, recovery sim, mobile port, and SFS chrome are
+> done. **Do not implement from this file.** Current brief and next work
+> (hyperbolic rails / patched conics): **`HANDOFF.md`**.
+
 **Author:** Grok · **Date:** 2026-07-12  
 **Context:** Post LT-2 landing struts; Phase 9 scaffolding landed but rotation needs redesign.  
 **Related:** `next-phase-prompt-legs-and-root-rewrite.md`, `CURRENT_STATUS.md`, `documents/` / Grok additions handoffs

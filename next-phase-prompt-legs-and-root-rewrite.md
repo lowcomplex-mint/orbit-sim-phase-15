@@ -1,5 +1,9 @@
 # Next Phase Prompt — Phase 8 (Deployable Landing Legs) & Phase 9 (Root Parts + Transform / Rotate / Reroot)
 
+> **Historical prompt (2026-07-12).** Phases 8 and 9 **shipped**. Rotate was
+> later rebuilt in Phase 13. **Do not implement from this file.** Current
+> brief: **`HANDOFF.md`**.
+
 **To:** next coding agent (Grok / Cursor)
 **Continues from:** `documents/Grok additions/VAB overhaul.md` (Sessions 1–2, Phase 7 fractional grid).
 Read that file first. This prompt assumes it's current and correct except where flagged below.

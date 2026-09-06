@@ -1,7 +1,6 @@
-# Moved
+# VAB overhaul (historical — Phase 7)
 
-The canonical handoff document lives at:
+> **Shipped.** Do not implement from this file. Current brief: **[`HANDOFF.md`](../../HANDOFF.md)**.
 
-**`/home/hasan/Documents/Grok additions/VAB overhaul.md`**
-
-(Grok session notes for the orbit-simulator VAB overhaul and parts changes.)
+Session notes on Hasan’s machine:
+`/home/hasan/Documents/Grok projects/Orbit-sim/VAB overhaul.md`.
